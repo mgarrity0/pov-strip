@@ -8,3 +8,4 @@ tools/check_resampler/host
 tools/check_resampler/*.bin
 tools/check_resampler/resample_extract.inc
 *.pov
+.venv/

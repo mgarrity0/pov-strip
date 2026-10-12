@@ -9,10 +9,9 @@ Images live in the ESP32's own flash and go in over the USB cable. Flash the fir
 ```
 git clone https://github.com/mgarrity0/pov-strip.git
 cd pov-strip
-pip install -e .            # pyserial, numpy, pillow; gives you the `povstrip` command
 ```
 
-Windows: `py -m pip install -e .` and, if `povstrip` is not on PATH afterwards, `py -m povstrip ...` works the same. Ports are `COM5` style; `povstrip ports` lists them.
+Then use the launcher, which makes its own Python environment the first time: `povstrip.cmd ...` on Windows (ports are `COM5` style), `./povstrip.sh ...` on macOS/Linux. The commands below are written as `povstrip ...`; prefix accordingly. (`pip install -e .` also works if you prefer a global `povstrip` command.) `povstrip ports` lists serial ports.
 
 Firmware, either way:
 
