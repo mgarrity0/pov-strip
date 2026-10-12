@@ -693,6 +693,7 @@ void setup() {
   selectImage(S.img);
   delay(300);
   if (!store) Serial.println("\nno LittleFS partition: images cannot be uploaded, playing the compiled-in set");
+  else if (povstore::freshlyFormatted()) Serial.println("\nimage store formatted (first boot on this partition layout)");
   if (g_savedStale) Serial.println("\nsaved settings skipped: config.h changed since 'save'");
   printInfo();
   printHelp();

@@ -144,7 +144,7 @@ class Device:
         self.ser.flush()
 
     # ---- session ----------------------------------------------------------------------
-    def connect(self, timeout: float = 8.0) -> list[str]:
+    def connect(self, timeout: float = 12.0) -> list[str]:
         """Waits for the firmware, whether it just rebooted or was already running."""
         end = time.monotonic() + timeout
         self.banner = []
@@ -157,12 +157,18 @@ class Device:
             if line.strip() == "ready":
                 break
         # either way, a ping must answer
-        for _ in range(3):
+        for _ in range(4):
             lines, ok, err = self.cmd("ping", timeout=2.0)
             if ok:
                 return self.banner
             self.banner += lines
-        raise DeviceError("no answer from the strip (is pov-strip firmware 2.0 flashed? right port?)")
+        hint = ""
+        text = "\n".join(self.banner)
+        if "assert failed" in text or "Backtrace" in text or "Rebooting..." in text:
+            hint = "; the board is crashing at boot, see the log"
+        elif "unknown command" in text:
+            hint = "; an older pov-strip firmware is running, flash 2.0"
+        raise DeviceError("no answer from the strip (right port? pov-strip 2.0 flashed?)" + hint)
 
     def cmd(self, text: str, timeout: float = 6.0) -> tuple[list[str], bool, str]:
         """Sends one console command. Returns (output lines, ok, error message)."""

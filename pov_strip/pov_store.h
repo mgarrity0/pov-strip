@@ -27,7 +27,9 @@
 #pragma once
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <Preferences.h>
 #include "esp_heap_caps.h"
+#include "esp_partition.h"
 #include "pov_types.h"
 
 namespace povstore {
@@ -69,13 +71,38 @@ static void scan() {
   }
 }
 
+// A filesystem left on the flash by another project, or one formatted for a
+// different partition layout, makes LittleFS abort at mount (assert in
+// lfs_fs_grow when the old filesystem is larger than the partition). So the
+// first boot after a layout change wipes the superblocks and formats fresh.
+// The partition size seen last is kept in its own NVS namespace, which the
+// console's "reset" does not touch.
+static bool s_fresh = false;
+
+static void prepareFlash() {
+  const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
+  if (!part) return;
+  Preferences p;
+  if (!p.begin("povfs", false)) return;
+  const uint32_t seen = p.getUInt("size", 0);
+  if (seen != part->size) {
+    esp_partition_erase_range(part, 0, 2u * 4096u);  // both LittleFS superblocks
+    p.putUInt("size", part->size);
+    s_fresh = true;
+  }
+  p.end();
+}
+
 static bool begin() {
   crcInit();
-  s_ok = LittleFS.begin(true);  // formats on first use
+  prepareFlash();
+  s_ok = LittleFS.begin(true);  // formats when nothing valid is there
   if (s_ok) LittleFS.mkdir("/img");
   scan();
   return s_ok;
 }
+
+static bool freshlyFormatted() { return s_fresh; }
 
 static uint8_t count() { return s_count; }
 
