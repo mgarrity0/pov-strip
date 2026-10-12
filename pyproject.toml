@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "povstrip"
+version = "2.0.0"
+description = "Host tool for the pov-strip ESP32 firmware: upload images over USB, live settings, local Studio app"
+requires-python = ">=3.9"
+dependencies = ["pyserial>=3.5", "numpy>=1.22", "pillow>=9.0"]
+
+[project.scripts]
+povstrip = "povstrip.cli:main"
+
+[tool.setuptools]
+packages = ["povstrip"]

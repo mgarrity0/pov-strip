@@ -1,0 +1,20 @@
+// Quick checks of the pure logic in studio/core.js:  node test/core_test.js
+const path = require("path");
+const P = require(path.join(__dirname, "..", "studio", "core.js"));
+let fails = 0;
+const ok = (cond, msg) => { if (!cond) { fails++; console.log("FAIL", msg); } else console.log("ok  ", msg); };
+const base = { lengthM: 2, density: 60, distM: 5, sweepDps: 300, glanceDeg: 25, colMode: "auto", colUsManual: 0, chip: "WS2812B", spiMHz: 16 };
+const d = P.design(base);
+ok(d.n === 120 && d.chipUs === 3905 && d.colUs === 3905 && d.chipLimited, `WS2812B 2 m x 60/m: 120 LEDs, 3905 us column (got ${d.chipUs}/${d.colUs})`);
+const a = P.design({ ...base, chip: "APA102" });
+ok(a.chipUs === 275 && a.colUs === 637, `APA102 16 MHz: 275 us chip, 637 us column (got ${a.chipUs}/${a.colUs})`);
+ok(P.columnsFor(d, 1, 0.8) === 16, `heart at 80% on the WS2812B grid is 16 columns (got ${P.columnsFor(d, 1, 0.8)})`);
+const seq = (dir) => { const C = 4, cu = 100, g = 50, Pd = P.cycle(dir, C, cu, g).periodUs, out = []; for (let t = 1; t < Pd; t += 100) out.push(P.columnAt(t, dir, C, cu, g)); return out.join(","); };
+ok(seq(0) === "3,2,1,0,-1", "ltr plays the right column first then dark");
+ok(seq(1) === "0,1,2,3,-1", "rtl plays the left column first");
+ok(seq(3) === "0,1,2,3,2,1,0,-1", "pal plays image then mirror");
+ok(Math.abs(P.cleanChance(80, 20, 60) - 0.75) < 1e-9, "clean glance chance (D-T)/(T+G)");
+const src = new Uint8Array(18); src[6] = src[7] = src[8] = 255;
+ok(P.areaResample(src, 3, 6, 1, 1, 1, 0, 1, 2.4)[0] === 121, "1-of-6 white line averages to 121 in linear light");
+ok(P.crc32(new TextEncoder().encode("123456789")).toString(16) === "cbf43926", "crc32 check value");
+process.exit(fails ? 1 : 0);

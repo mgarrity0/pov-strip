@@ -1,0 +1,1902 @@
+<title>POV Strip Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Bungee&family=Instrument+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: bench. Controls rail on the left, a dark viewing field on the right with
+   readouts and export under it. Phones stack field first, then controls. */
+:root {
+  --bg: #eceff2;
+  --surface: #f7f8fa;
+  --raised: #ffffff;
+  --ink: #11161c;
+  --muted: #5a6470;
+  --line: #cbd2da;
+  --accent: #c2186b;
+  --accent-ink: #a3135a;
+  --accent-soft: #f7dbe8;
+  --on-accent: #ffffff;
+  --ok: #13804a;
+  --warn: #9a6200;
+  --bad: #c13a25;
+  --info: #2f5f9e;
+  --field: #030405;
+  --field-grid: rgba(255, 255, 255, 0.07);
+  --field-ink: #8a94a0;
+  --field-strip: #ff4d9e;
+  --field-line: #39414b;
+  --field-line-hi: #6b7580;
+  --field-text: #dfe5eb;
+  --field-hi: #e9edf2;
+  --field-raise: #2a3038;
+  --field-input: #11161b;
+  --field-on-strip: #1a0710;
+  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "Spline Sans Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1216; --surface: #141a20; --raised: #1a2129; --ink: #e5eaf0; --muted: #8e99a5;
+    --line: #2a333d; --accent: #ff4d9e; --accent-ink: #ff7ab6; --accent-soft: #3a1426;
+    --on-accent: #1a0710; --ok: #45c486; --warn: #e3a447; --bad: #f2735e; --info: #7fa8e8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1216; --surface: #141a20; --raised: #1a2129; --ink: #e5eaf0; --muted: #8e99a5;
+  --line: #2a333d; --accent: #ff4d9e; --accent-ink: #ff7ab6; --accent-soft: #3a1426;
+  --on-accent: #1a0710; --ok: #45c486; --warn: #e3a447; --bad: #f2735e; --info: #7fa8e8;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--f-body); margin: 0; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-inline: 16px; padding-block: 14px 48px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+a { color: var(--accent-ink); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- header ---- */
+.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px;
+  padding-block: 6px 14px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.mark { font: 900 34px/1 var(--f-display); letter-spacing: 0.03em; text-transform: uppercase; }
+.mark span { color: var(--accent); }
+.tag { color: var(--muted); font-size: 14px; max-width: 60ch; }
+.summary { font: 500 13px/1.3 var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---- bench grid ---- */
+.bench { display: grid; gap: 18px 28px; grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "field" "read" "ctrl" "device" "export" "detail"; }
+@media (min-width: 1000px) {
+  .bench { grid-template-columns: minmax(310px, 360px) minmax(0, 1fr);
+    grid-template-areas: "ctrl field" "ctrl read" "ctrl device" "ctrl export" "ctrl detail"; align-items: start; }
+}
+.device { grid-area: device; min-width: 0; }
+.device .live { display: inline-flex; align-items: center; gap: 6px; font: 500 12.5px/1.2 var(--f-mono); color: var(--muted); }
+.device .live i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: inline-block; }
+.device .live.on i { background: var(--ok); }
+.device .live.busy i { background: var(--warn); }
+.prog { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.prog > div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
+.field-wrap { grid-area: field; min-width: 0; }
+.read { grid-area: read; min-width: 0; }
+.ctrl { grid-area: ctrl; min-width: 0; display: grid; gap: 4px; }
+.export { grid-area: export; min-width: 0; }
+.detail { grid-area: detail; min-width: 0; }
+
+/* ---- viewing field ---- */
+.field { background: var(--field); border-radius: var(--r); padding: 10px 10px 8px; display: grid; gap: 8px; }
+.field-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.field-cap { color: var(--field-ink); font: 500 12px/1.35 var(--f-mono); min-width: 0; }
+.field-cap b { color: var(--field-hi); font-weight: 500; }
+.field-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.fbtn { background: transparent; border: 1px solid var(--field-line); color: var(--field-text); border-radius: 999px;
+  padding: 5px 12px; font: 600 13px/1.2 var(--f-body); cursor: pointer; }
+.fbtn:hover { border-color: var(--field-line-hi); }
+.fbtn.primary { background: var(--field-strip); border-color: var(--field-strip); color: var(--field-on-strip); }
+.fbtn[aria-pressed="true"] { background: var(--field-raise); border-color: var(--field-ink); }
+canvas#field { display: block; width: 100%; border-radius: 6px; image-rendering: auto; touch-action: manipulation; }
+.field-foot { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; color: var(--field-ink);
+  font: 400 12px/1.35 var(--f-mono); }
+.field-foot label { display: inline-flex; align-items: center; gap: 6px; }
+.field-foot select { background: var(--field-input); border: 1px solid var(--field-line); color: var(--field-text); border-radius: 6px; padding: 2px 6px; font-size: 12px; color-scheme: dark; }
+
+/* ---- status + readouts ---- */
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; }
+.pill { display: inline-flex; align-items: baseline; gap: 6px; border: 1px solid var(--line); background: var(--raised);
+  border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 13px; line-height: 1.3; }
+.pill i { font-style: normal; font: 700 10px/1 var(--f-mono); letter-spacing: 0.08em; padding: 3px 5px; border-radius: 4px;
+  color: var(--raised); background: var(--muted); }
+.pill.ok i { background: var(--ok); } .pill.warn i { background: var(--warn); }
+.pill.bad i { background: var(--bad); } .pill.info i { background: var(--info); }
+.grid6 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+@media (min-width: 640px) { .grid6 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.ro { background: var(--surface); padding: 10px 12px 11px; min-width: 0; }
+.ro .k { font: 600 11px/1.2 var(--f-body); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.ro .v { font: 500 22px/1.25 var(--f-mono); font-variant-numeric: tabular-nums; margin-top: 3px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.ro .v small { font-size: 13px; color: var(--muted); font-weight: 400; }
+.ro .s { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+
+/* ---- controls ---- */
+.sec { border-top: 1px solid var(--line); padding-block: 12px 14px; display: grid; gap: 12px; }
+.sec:first-child { border-top: 0; padding-top: 0; }
+.sec h2 { font: 700 12px/1.2 var(--f-body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  display: flex; justify-content: space-between; align-items: baseline; }
+.sec h2 span { font: 400 12px/1.2 var(--f-mono); letter-spacing: 0; text-transform: none; }
+.row { display: grid; gap: 5px; min-width: 0; }
+.row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.lab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13.5px; font-weight: 500; }
+.lab output, .lab .val { font: 500 13px/1.2 var(--f-mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.hint { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+input[type="number"], input[type="text"], select, textarea {
+  width: 100%; min-width: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 7px;
+  padding: 7px 9px; font-size: 14px; }
+input[type="number"] { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+input[type="color"] { width: 44px; height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--raised); padding: 2px; }
+input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--raised); }
+.seg label { flex: 1 1 auto; text-align: center; font-size: 13px; font-weight: 500; padding: 6px 8px; cursor: pointer;
+  border-left: 1px solid var(--line); white-space: nowrap; }
+.seg label:first-child { border-left: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.inline { display: flex; gap: 8px; align-items: center; }
+.inline > * { min-width: 0; }
+
+/* ---- slides ---- */
+.slides { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.slide { flex: 0 0 auto; display: grid; gap: 4px; background: var(--raised); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px; width: 92px; }
+.slide[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.slide.out { opacity: 0.6; }
+.slide-pick { display: grid; gap: 4px; justify-items: center; background: none; border: 0; padding: 0; cursor: pointer; min-width: 0; }
+.slide-pick canvas { width: 78px; height: 60px; background: var(--field); border-radius: 4px; image-rendering: pixelated; }
+.slide-pick span { font-size: 11.5px; line-height: 1.2; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slide-inc { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  padding-top: 2px; border-top: 1px solid var(--line); }
+.slide-inc input { width: 14px; height: 14px; }
+.adders { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn { border: 1px solid var(--line); background: var(--raised); border-radius: 8px; padding: 7px 12px; font-size: 13.5px;
+  font-weight: 600; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.btn.danger { color: var(--bad); }
+.file-label { position: relative; overflow: hidden; }
+.file-label input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* ---- export ---- */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; }
+.panel h2 { font: 800 22px/1.1 var(--f-display); letter-spacing: 0.02em; text-transform: uppercase; }
+.panel p { margin: 0; color: var(--muted); font-size: 14px; max-width: 70ch; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.note { font-size: 13px; color: var(--muted); }
+.note.good { color: var(--ok); } .note.err { color: var(--bad); }
+.codebox { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; max-height: 240px; }
+.codebox pre { margin: 0; padding: 10px 12px; font: 12px/1.45 var(--f-mono); }
+textarea#fallback { font: 11px/1.4 var(--f-mono); height: 160px; }
+.pins { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px 12px; }
+
+/* ---- details ---- */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 7px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+tr:first-child th, tr:first-child td { border-top: 0; }
+th { font-weight: 500; white-space: nowrap; }
+td.v { font: 500 13px/1.45 var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.n { color: var(--muted); min-width: 220px; }
+tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  background: var(--bg); padding-top: 9px; padding-bottom: 6px; }
+@media (max-width: 560px) {
+  #tbl, #tbl tbody { display: block; }
+  #tbl tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-top: 1px solid var(--line); }
+  #tbl tr:first-child { border-top: 0; }
+  #tbl th, #tbl td { border-top: 0; }
+  #tbl td.v { padding-left: 8px; text-align: right; }
+  #tbl td.n { grid-column: 1 / -1; min-width: 0; padding-top: 0; font-size: 12.5px; }
+  #tbl tr.grp, #tbl tr.grp th { display: block; }
+}
+.sources { margin: 14px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; display: grid; gap: 3px; }
+.foot-h { font: 800 22px/1.1 var(--f-display); letter-spacing: 0.02em; text-transform: uppercase; margin: 6px 0 10px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="mark">POV Strip <span>Studio</span></h1>
+      <div class="tag">One stationary LED strip. Viewers glance past it or shake their head and see a picture for an instant.</div>
+    </div>
+    <div class="summary" id="summary"></div>
+  </header>
+
+  <main class="bench">
+    <!-- viewing field -->
+    <section class="field-wrap" aria-label="Simulated view">
+      <div class="field">
+        <div class="field-head">
+          <div class="field-cap" id="fieldCap"></div>
+          <div class="field-btns">
+            <button class="fbtn primary" id="bGlanceR" type="button">Glance &rarr;</button>
+            <button class="fbtn" id="bGlanceL" type="button">&larr; Glance</button>
+            <button class="fbtn" id="bShake" type="button" aria-pressed="false">Shake</button>
+          </div>
+        </div>
+        <canvas id="field" height="320" role="img" aria-label="Simulated view of the strip during a glance"></canvas>
+        <div class="field-foot">
+          <span id="fieldScale"></span>
+          <label for="slowmo">Playback
+            <select id="slowmo">
+              <option value="0.02">1/50 speed</option>
+              <option value="0.05" selected>1/20 speed</option>
+              <option value="0.2">1/5 speed</option>
+              <option value="1">real time</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- readouts -->
+    <section class="read" aria-label="Key numbers">
+      <ul class="pills" id="pills"></ul>
+      <div class="grid6" id="grid6"></div>
+    </section>
+
+    <!-- controls -->
+    <div class="ctrl">
+      <section class="sec" aria-labelledby="hStrip">
+        <h2 id="hStrip">Strip <span id="nLeds"></span></h2>
+        <div class="row">
+          <div class="lab"><label for="len">Length</label><output id="lenOut"></output></div>
+          <input type="range" id="len" min="1" max="5" step="0.05">
+        </div>
+        <div class="row2">
+          <div class="row">
+            <label class="lab" for="dens">LEDs per meter</label>
+            <select id="dens">
+              <option>30</option><option>36</option><option>48</option><option>60</option><option>72</option>
+              <option>96</option><option>120</option><option>144</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="lab" for="chip">Chip</label>
+            <select id="chip"></select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="row" id="spiRow">
+            <label class="lab" for="spi">SPI clock (MHz)</label>
+            <input type="number" id="spi" min="0.5" max="40" step="0.5">
+          </div>
+          <div class="row">
+            <label class="lab" for="pwm">PWM (Hz)</label>
+            <input type="number" id="pwm" min="0" step="10" placeholder="unknown">
+          </div>
+        </div>
+        <div class="hint" id="chipHint"></div>
+      </section>
+
+      <section class="sec" aria-labelledby="hView">
+        <h2 id="hView">Viewer</h2>
+        <div class="row">
+          <div class="lab"><label for="dist">Viewing distance</label><output id="distOut"></output></div>
+          <input type="range" id="dist" min="1" max="30" step="0.5">
+        </div>
+        <div class="row">
+          <div class="lab"><label for="sweep">Eye speed across the strip</label><output id="sweepOut"></output></div>
+          <input type="range" id="sweep" min="60" max="600" step="10">
+          <div class="hint">Sets the column period. About 9&deg; glances peak at 160 to 410&deg;/s; larger glances run faster.</div>
+        </div>
+        <div class="row">
+          <div class="lab"><label for="glance">Glance size</label><output id="glanceOut"></output></div>
+          <input type="range" id="glance" min="4" max="45" step="1">
+        </div>
+        <div class="row">
+          <span class="lab">Speed profile</span>
+          <div class="seg" role="radiogroup" aria-label="Speed profile">
+            <label><input type="radio" name="profile" value="const">Constant</label>
+            <label><input type="radio" name="profile" value="real">Bell (real saccade)</label>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="row">
+            <div class="lab"><label for="shakeA">Shake width</label><output id="shakeAOut"></output></div>
+            <input type="range" id="shakeA" min="4" max="40" step="1">
+          </div>
+          <div class="row">
+            <div class="lab"><label for="shakeHz">Shake rate</label><output id="shakeHzOut"></output></div>
+            <input type="range" id="shakeHz" min="0.5" max="5" step="0.25">
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" aria-labelledby="hPlay">
+        <h2 id="hPlay">Playback</h2>
+        <div class="row">
+          <span class="lab">Viewers glance</span>
+          <div class="seg" role="radiogroup" aria-label="Direction">
+            <label title="Play right column first"><input type="radio" name="dir" value="ltr">Left to right</label>
+            <label title="Play left column first"><input type="radio" name="dir" value="rtl">Right to left</label>
+            <label title="Alternate passes"><input type="radio" name="dir" value="alt">Both</label>
+            <label title="Image then its mirror"><input type="radio" name="dir" value="pal">Mirror pair</label>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="row">
+            <label class="lab" for="colMode">Column period</label>
+            <select id="colMode"><option value="auto">Square pixels</option><option value="manual">Manual</option></select>
+          </div>
+          <div class="row">
+            <label class="lab" for="colUs">Manual (&micro;s)</label>
+            <input type="number" id="colUs" min="20" step="10">
+          </div>
+        </div>
+        <div class="row2">
+          <div class="row">
+            <label class="lab" for="gapMode">Dark gap</label>
+            <select id="gapMode"><option value="auto">Recommended</option><option value="manual">Manual</option></select>
+          </div>
+          <div class="row">
+            <label class="lab" for="gapMs">Manual (ms)</label>
+            <input type="number" id="gapMs" min="0" step="1">
+          </div>
+        </div>
+        <div class="row">
+          <span class="lab">Color output</span>
+          <div class="seg" role="radiogroup" aria-label="Color output">
+            <label title="8-bit color through gamma"><input type="radio" name="mode" value="full">Full color</label>
+            <label title="Each channel fully on or off, no PWM gaps. Brightness only applies on chips with current control"><input type="radio" name="mode" value="safe">PWM-safe</label>
+            <label title="SK9822 / HD107S: brightness from drive current"><input type="radio" name="mode" value="current">Current</label>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="row">
+            <div class="lab"><label for="bri">Brightness</label><output id="briOut"></output></div>
+            <input type="range" id="bri" min="0" max="255" step="1">
+          </div>
+          <div class="row">
+            <div class="lab"><label for="gamma">Gamma</label><output id="gammaOut"></output></div>
+            <input type="range" id="gamma" min="1" max="3.2" step="0.1">
+          </div>
+        </div>
+        <div class="hint" id="briHint"></div>
+        <label class="check" for="modelPwm"><input type="checkbox" id="modelPwm">Show PWM flicker in the preview</label>
+      </section>
+
+      <section class="sec" aria-labelledby="hSlides">
+        <h2 id="hSlides">Slides <span id="slideCount"></span></h2>
+        <div class="slides" id="slides"></div>
+        <div class="adders">
+          <button class="btn" type="button" id="addText">+ Text</button>
+          <button class="btn" type="button" id="addPattern">+ Pattern</button>
+          <label class="btn file-label" for="addImage">+ Image<input type="file" id="addImage" accept="image/*"></label>
+        </div>
+        <div id="editor" class="sec" style="border-top:0;padding:0"></div>
+      </section>
+    </div>
+
+    <!-- device (shown when served by `povstrip serve`) -->
+    <section class="device panel" id="devicePanel" aria-labelledby="hDevice" hidden>
+      <h2 id="hDevice">Strip over USB</h2>
+      <p>The ticked slides go straight into the ESP32's flash over the USB cable. No recompiling: the firmware stays as it is and plays what you send.</p>
+      <div class="actions">
+        <select id="devPort" aria-label="Serial port" style="width:auto;min-width:200px"></select>
+        <button class="btn" type="button" id="devRefresh">Rescan</button>
+        <button class="btn primary" type="button" id="devConnect">Connect</button>
+        <span class="live" id="devLive"><i></i><span>not connected</span></span>
+      </div>
+      <div class="actions">
+        <button class="btn primary" type="button" id="devSend" disabled>Send ticked slides to strip</button>
+        <button class="btn" type="button" id="devApply" disabled>Apply strip settings</button>
+        <button class="btn" type="button" id="devTest" disabled>Test frame</button>
+        <button class="btn" type="button" id="devNext" disabled>Next image</button>
+        <button class="btn" type="button" id="devInfo" disabled>Info</button>
+        <button class="btn danger" type="button" id="devWipe" disabled>Wipe strip</button>
+      </div>
+      <div class="prog" id="devProg" hidden><div></div></div>
+      <div class="codebox"><pre id="devLog">Plug the ESP32 in, pick its port, Connect.</pre></div>
+    </section>
+
+    <!-- export -->
+    <section class="export panel" aria-labelledby="hExport">
+      <h2 id="hExport">Export to firmware</h2>
+      <p>The header holds the ticked slides, resampled for this strip, plus the column period, gap and direction. The project zip is the whole sketch with config.h set from these controls: unzip and open pov_strip/pov_strip.ino in Arduino IDE.</p>
+      <div class="pins">
+        <div class="row">
+          <label class="lab" for="board">Board</label>
+          <select id="board">
+            <option value="xiao">XIAO ESP32S3</option>
+            <option value="devkit">ESP32 DevKit</option>
+            <option value="s3devkit">ESP32-S3 DevKitC</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div class="row"><label class="lab" for="pinData">Data GPIO</label><input type="number" id="pinData" min="0" max="48"></div>
+        <div class="row"><label class="lab" for="pinClock">Clock GPIO</label><input type="number" id="pinClock" min="0" max="48"></div>
+        <div class="row"><label class="lab" for="order">Color order</label>
+          <select id="order"><option>BGR</option><option>RGB</option><option>GRB</option><option>GBR</option><option>BRG</option><option>RBG</option></select></div>
+      </div>
+      <label class="check" for="dataBottom"><input type="checkbox" id="dataBottom">Data input at the bottom of the strip</label>
+      <div class="actions">
+        <button class="btn primary" type="button" id="bCopy">Copy pov_image.h</button>
+        <button class="btn" type="button" id="bZip" hidden>Save project .zip</button>
+        <span class="note" id="exportNote"></span>
+      </div>
+      <textarea id="fallback" hidden readonly aria-label="Header text"></textarea>
+      <div class="codebox"><pre id="preview"></pre></div>
+    </section>
+
+    <!-- details -->
+    <section class="detail" aria-labelledby="hDetail">
+      <h2 class="foot-h" id="hDetail">The numbers</h2>
+      <div class="tbl-wrap"><table id="tbl"></table></div>
+      <ol class="sources">
+        <li><a href="https://cpldcpu.com/2016/12/13/sk9822-a-clone-of-the-apa102/" target="_blank" rel="noopener">cpldcpu: SK9822, a clone of the APA102?</a> PWM 19.2 kHz vs 4.7 kHz, APA102 global brightness PWM ~440 Hz, SK9822 current control and latching.</li>
+        <li><a href="https://cpldcpu.com/2016/03/09/the-sk6812-another-intelligent-rgb-led/" target="_blank" rel="noopener">cpldcpu: the SK6812</a> PWM 1.1 kHz vs WS2812 430 Hz.</li>
+        <li><a href="https://learn.watterott.com/kb/ws281x/WS2812B-v5.pdf" target="_blank" rel="noopener">WS2812B-V5 datasheet</a> 800 kbps, reset &gt; 280 &micro;s, 2 kHz refresh.</li>
+        <li><a href="https://yggdrasil.ti.bfh.ch/_static/datasheets/yggdrasil/SK9822.pdf" target="_blank" rel="noopener">SK9822 datasheet</a> 30 MHz max data, current-based 5-bit brightness.</li>
+        <li><a href="https://www.superlightingled.com/PDF/HD107S-Datasheet.pdf" target="_blank" rel="noopener">HD107S datasheet</a> 26 kHz PWM, 30 MHz max data.</li>
+        <li><a href="https://repository.essex.ac.uk/3842/" target="_blank" rel="noopener">Roberts &amp; Wilkins 2013</a> flicker seen during saccades up to a mean 1.98 kHz (11 observers).</li>
+        <li><a href="https://iris.unige.it/retrieve/e268c4ce-65fa-a6b7-e053-3a05fe0adea1/Main_Sequence_BRM%20%28revised%29.pdf" target="_blank" rel="noopener">Saccade main sequence study (Genoa)</a> ~9&deg; saccades: 160 to 414&deg;/s peak, 31 to 68 ms.</li>
+      </ol>
+    </section>
+  </main>
+</div>
+
+<script id="fw" type="application/json">{"files": {"platformio.ini": "; pov-strip: PlatformIO build. Arduino core 3.x comes from pioarduino.\n;   pio run -t upload && pio device monitor     (default env: esp32dev)\n;   pio run -e xiao_esp32s3 -t upload            (other boards)\n; Arduino IDE instead: open pov_strip/pov_strip.ino (arduino-esp32 3.x).\n\n[platformio]\nsrc_dir = pov_strip\ndefault_envs = esp32dev\n\n[env]\nplatform = https://github.com/pioarduino/platform-espressif32/releases/download/stable/platform-espressif32.zip\nframework = arduino\nmonitor_speed = 115200\n; only used when POV_CHIP is a single-wire chip\nlib_deps = fastled/FastLED@^3.10.7\n\n[env:xiao_esp32s3]\nboard = seeed_xiao_esp32s3\n\n[env:esp32dev]\nboard = esp32dev\n; 3 MB app, no OTA: room for images (default layout is 1.25 MB)\nboard_build.partitions = huge_app.csv\n\n[env:esp32s3_devkitc]\nboard = esp32-s3-devkitc-1\nboard_build.partitions = huge_app.csv\n", "README.md": "# pov-strip\n\nStationary eye-scan persistence of vision on one LED strip, 1 to 5 m. The strip stays still and flashes one image column every few hundred microseconds. A viewer who glances past it, or shakes their head, sweeps those flashes across the retina and sees the picture for an instant.\n\n## Files\n\n| File | What |\n|---|---|\n| `pov_strip/pov_strip.ino` | Column scheduler, playlist, serial console, settings in NVS |\n| `pov_strip/config.h` | Chip, length, LEDs/m, pins, render defaults |\n| `pov_strip/led_out.h` | Clocked chips over ESP-IDF SPI + DMA (double-buffered); single-wire chips via FastLED |\n| `pov_strip/pov_types.h` | Chip, direction and render constants, `PovImage` record |\n| `pov_strip/pov_image.h` | Images. Ships with one heart sized for the config above; replace it with an export from POV Strip Studio |\n\nChips: APA102, SK9822, HD107S (data + clock); WS2812B, WS2812B-V5, SK6812 (RGB), WS2811 (800 kHz), WS2813, WS2815 (single wire).\n\n## Arduino IDE\n\n1. File > Preferences (on a Mac, under the Arduino IDE menu) > Additional boards manager URLs: `https://espressif.github.io/arduino-esp32/package_esp32_index.json`\n2. Tools > Board > Boards Manager: install **esp32** by Espressif Systems, version 3.x.\n3. Tools > Manage Libraries: install **FastLED** 3.10.7 or newer (single-wire chips only).\n4. Open `pov_strip/pov_strip.ino`. Tools > Board > esp32 > **ESP32 Dev Module**. Upload.\n5. Tools > Serial Monitor: 115200 baud, line ending **New Line**. Type `help`.\n\nImages past about 920 kB: Tools > Partition Scheme > \"Huge APP (3MB No OTA/1MB SPIFFS)\". The default partition gives the app 1.25 MB and the firmware takes 321 to 350 kB.\n\nSettings stored with `save` survive uploads until config.h or the images change; then the new values win.\n\nBuilt with arduino-cli 1.5.1 (the build engine inside Arduino IDE 2), esp32 3.3.12 and FastLED 3.10.7 for ESP32 Dev Module: 356,015 bytes, 27% of the default partition, no warnings from the sketch at `-Wall -Wextra`. Also linked for ESP32-S3. The resampler was checked against the Studio's on a PC (same output within 2/255). Not run on hardware yet: confirm timing with `info` and a scope on the data line.\n\n## PlatformIO\n\n`pio run -t upload`, then `pio device monitor` (115200). Default env `esp32dev` uses the Huge APP partition (3 MB app, no OTA). Envs for `xiao_esp32s3` and `esp32s3_devkitc` too.\n\n## Wiring\n\n- Defaults: data GPIO4 (D4 on an ESP32 DevKit), clock GPIO18 (D18, clocked chips only). XIAO ESP32S3: data 9 (D10), clock 7 (D8); its D4 label is GPIO5.\n- Level-shift data and clock to 5 V (74AHCT125 on 5 V). Keep the MCU-to-strip lead short at 16 MHz and above; a 33 to 100 ohm series resistor at the driver helps.\n- `POV_DATA_IN_AT_BOTTOM 1` if the controller sits at the base of a vertical strip.\n- 5 m strips: inject 5 V at both ends. A full-white column on 300 LEDs at 20 mA per channel is 18 A; POV duty is low but the column peak is real.\n\n## The numbers that matter\n\nSquare pixels need one column per LED-angle of eye travel:\n\n    column period = (LED pitch / viewing distance) / eye speed\n    2 m x 60/m, viewer at 5 m, eye at 300 deg/s  ->  637 us (1.57 kHz)\n\nTime to clock one column out:\n\n| Chip | Per column | 300 LEDs |\n|---|---|---|\n| APA102 / SK9822 / HD107S | 32 bits per LED + frames, at the SPI clock | 639 us at 16 MHz |\n| WS2812B | 30 us per LED + 280 us latch | 9.3 ms (107 columns/s) |\n\nWhen the chip is slower than the design, the firmware plays fewer, longer columns so the image keeps its width (lower horizontal resolution). Single-wire chips work for short, low-density strips (1 m x 30/m needs 1.21 ms against a 1.27 ms design at 5 m); past that, use a clocked chip.\n\nResampling: export from the Studio for the strip you have and the image plays pixel for pixel. If the strip, density or column period differ from the export (a `len` change, a slower chip), the firmware resamples the image once into RAM: each displayed pixel is the area average of the stored pixels it covers, in linear light through the output gamma, so a thin line keeps its share of the light instead of vanishing. `info` says when this is happening. If RAM is short it falls back to picking the nearest pixel and says so; export for the strip instead.\n\nPWM: a column shorter than a few PWM periods shows gaps in mid-tones. APA102 PWM is ~19.2 kHz; SK9822 measured 4.7 kHz (one datasheet says 1.2 kHz); WS2812 ~430 Hz on older parts, WS2812B-V5 2 kHz; SK6812 1.1 kHz.\n\n- `mode safe`: each channel fully on or off, so no PWM gaps. `bri` has no effect on chips without current control in this mode.\n- `mode current` (SK9822, HD107S): PWM pinned on, brightness through the 5-bit current field. 8 hues x 32 levels.\n- APA102's 5-bit global brightness is a second, slow PWM (~440 Hz), so the firmware keeps it at 31 and dims in the 8-bit value.\n\nDirection: a left-to-right glance paints later columns further left, so `ltr` plays the right-most column first. Glancing the other way shows a mirror image. `alt` alternates passes; `pal` plays the image then its mirror so either direction catches a correct copy.\n\nGap: after each pass the strip goes dark. With pass T, gap G and glance duration D, the chance one glance shows exactly one whole image is (D - T)/(T + G) for G >= D - T; the Studio sets G = D - T per slide.\n\nViewers resolve flicker during saccades up to a mean of ~2 kHz (Roberts & Wilkins 2013), so column rates far above that blur horizontally.\n\n## Serial console\n\n    info                 numbers for the current setup\n    len \u003cm>              strip length, e.g. len 3.5 (columns rescale to keep the aspect)\n    dens \u003cn>             LEDs per meter\n    col \u003cus> | col 0     column period override | image's\n    gap \u003cus> | gap img   dark time after each pass\n    dir ltr|rtl|alt|pal|img\n    bri \u003c0-255>  gamma \u003cx>  mode full|safe|current\n    img \u003cn> | next       select image; auto on|off for the playlist\n    mhz \u003cf>              SPI clock (clocked chips)\n    test | test off      static frame: 3 red LEDs at the data-in end, then R/G/B/W quarters\n    save | load | reset  settings in flash\n\n## Sources\n\n- cpldcpu, SK9822 vs APA102 (PWM, global brightness, latching, frame format): https://cpldcpu.com/2016/12/13/sk9822-a-clone-of-the-apa102/\n- cpldcpu, SK6812 (PWM vs WS2812): https://cpldcpu.com/2016/03/09/the-sk6812-another-intelligent-rgb-led/\n- WS2812B-V5 datasheet: https://learn.watterott.com/kb/ws281x/WS2812B-v5.pdf\n- SK9822 datasheet: https://yggdrasil.ti.bfh.ch/_static/datasheets/yggdrasil/SK9822.pdf\n- HD107S datasheet: https://www.superlightingled.com/PDF/HD107S-Datasheet.pdf\n- Roberts & Wilkins 2013, flicker during saccades above 1 kHz: https://repository.essex.ac.uk/3842/\n- ESP-IDF SPI master (GPIO matrix limits, DMA): https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/spi_master.html\n", "pov_strip/pov_strip.ino": "// pov_strip.ino - stationary eye-scan (saccade) persistence of vision on one LED strip.\n//\n// The strip stands still and flashes one image column at a time, a few hundred\n// microseconds each. A viewer who glances past it (or shakes their head) sweeps\n// those flashes across the retina and sees the whole image for an instant.\n//\n// Hardware and defaults: config.h. Images: uploaded over serial into the ESP32's\n// own flash (pov_store.h, used by the povstrip tool), or compiled in from\n// pov_image.h when nothing has been uploaded.\n// Serial console (115200): type \"help\". Every command ends with \"ok\" or \"err ...\".\n#include \u003cArduino.h>\n#include \u003cPreferences.h>\n#include \"esp_timer.h\"\n#include \"esp_heap_caps.h\"\n#include \"config.h\"\n#include \"pov_image.h\"\n#include \"pov_store.h\"\n#include \"led_out.h\"\n\n#define POV_VERSION \"2.0\"\n#define COMPILED_COUNT ((uint16_t)(sizeof(POV_IMAGES) / sizeof(POV_IMAGES[0])))\nstatic const uint32_t MAX_COLS = 8192;\n\n// ---- settings (defaults from config.h, overridable over serial, saved in NVS) ----\nstruct Settings {\n  float lengthM;\n  uint16_t density;\n  uint32_t colUs;    // 0 = image's value\n  int32_t gapUs;     // -1 = image's value\n  int8_t dir;        // -1 = image's value\n  uint8_t bri;\n  float gamma;\n  uint8_t mode;\n  uint16_t img;\n  bool autoAdvance;\n  float spiMHz;\n};\nstatic Settings S;\nstatic Preferences prefs;\n\n// ---- derived state ---------------------------------------------------------------\nstatic uint16_t g_n = 0;                    // active LEDs\nstatic uint16_t g_rowMap[POV_NUM_LEDS_MAX];     // LED index -> source row\nstatic uint16_t g_identity[POV_NUM_LEDS_MAX];   // LED index -> LED index (test frames)\nstatic uint16_t *g_colMap = nullptr;        // displayed column -> source column\nstatic uint32_t g_cols = 0;                 // displayed columns per pass\n// Source of the displayed pixels: the stored image, or a copy resampled to the\n// displayed grid (see resampleImage).\nstatic const uint8_t *g_src = nullptr;\nstatic uint16_t g_srcRows = 0, g_srcCols = 0;\nstatic uint8_t *g_resampled = nullptr;\nstatic bool g_nearest = false;              // nearest-pixel mapping in use\nstatic uint32_t g_colUs = 0;                // effective column period\nstatic uint32_t g_wantUs = 0;               // requested column period\nstatic uint32_t g_gapUs = 0;\nstatic uint8_t g_dir = POV_DIR_LTR;\nstatic uint8_t g_mode = RENDER_FULL;\nstatic uint16_t g_img = 0;                  // playlist index\nstatic PovImage g_cur;                      // the image being played\nstatic char g_curName[24] = \"\";\nstatic uint8_t *g_curBuf = nullptr;         // RAM copy of a stored image (freed on switch)\nstatic bool g_curFromStore = false;\nstatic uint32_t g_imgSince = 0;\nstatic int64_t g_deadline = 0;\nstatic int g_buf = 0;\nstatic uint32_t g_late = 0, g_passes = 0;\nstatic int64_t g_lastYield = 0;\nstatic bool g_test = false;\nstatic uint8_t *g_testCol = nullptr;\n\nstatic const char *dirName(uint8_t d) {\n  switch (d) {\n    case POV_DIR_LTR: return \"ltr\";\n    case POV_DIR_RTL: return \"rtl\";\n    case POV_DIR_ALT: return \"alt\";\n    case POV_DIR_PAL: return \"pal\";\n  }\n  return \"?\";\n}\nstatic const char *modeName(uint8_t m) {\n  return m == RENDER_FULL ? \"full\" : m == RENDER_PWM_SAFE ? \"safe\" : \"current\";\n}\n\n// ---- settings storage ----------------------------------------------------------\n// Settings stored with \"save\" survive uploads until config.h or the image set\n// changes; then the new defaults win, so edits made in the IDE take effect.\nstatic bool g_savedStale = false;\n\nstatic uint32_t fnv1a(uint32_t h, const void *p, size_t n) {\n  const uint8_t *b = (const uint8_t *)p;\n  while (n--) {\n    h ^= *b++;\n    h *= 16777619u;\n  }\n  return h;\n}\n\nstatic uint32_t configHash() {\n  const float f[] = {(float)POV_LENGTH_M, (float)POV_GAMMA, (float)POV_SPI_MHZ};\n  const int32_t v[] = {POV_CHIP, POV_LEDS_PER_M, POV_COL_US_OVERRIDE, POV_GAP_US_OVERRIDE,\n                       POV_DIR_OVERRIDE, POV_BRIGHTNESS, POV_RENDER, POV_PIN_DATA, POV_PIN_CLOCK};\n  uint32_t h = fnv1a(2166136261u, f, sizeof f);\n  return fnv1a(h, v, sizeof v);\n}\n\nstatic void defaults() {\n  S.lengthM = POV_LENGTH_M;\n  S.density = POV_LEDS_PER_M;\n  S.colUs = POV_COL_US_OVERRIDE;\n  S.gapUs = POV_GAP_US_OVERRIDE;\n  S.dir = POV_DIR_OVERRIDE;\n  S.bri = POV_BRIGHTNESS;\n  S.gamma = POV_GAMMA;\n  S.mode = POV_RENDER;\n  S.img = 0;\n  S.autoAdvance = true;\n  S.spiMHz = POV_SPI_MHZ;\n}\n\nstatic void loadSettings() {\n  defaults();\n  g_savedStale = false;\n  if (!prefs.begin(\"pov\", true)) return;  // nothing saved yet\n  if (prefs.getUInt(\"cfg\", 0) != configHash()) {\n    g_savedStale = true;  // saved under a different config.h or image set\n    prefs.end();\n    return;\n  }\n  S.lengthM = prefs.getFloat(\"len\", S.lengthM);\n  S.density = prefs.getUShort(\"dens\", S.density);\n  S.colUs = prefs.getULong(\"col\", S.colUs);\n  S.gapUs = prefs.getLong(\"gap\", S.gapUs);\n  S.dir = prefs.getChar(\"dir\", S.dir);\n  S.bri = prefs.getUChar(\"bri\", S.bri);\n  S.gamma = prefs.getFloat(\"gam\", S.gamma);\n  S.mode = prefs.getUChar(\"mode\", S.mode);\n  S.img = prefs.getUShort(\"img\", S.img);\n  S.autoAdvance = prefs.getBool(\"auto\", S.autoAdvance);\n  S.spiMHz = prefs.getFloat(\"mhz\", S.spiMHz);\n  prefs.end();\n}\n\nstatic void saveSettings() {\n  prefs.begin(\"pov\", false);\n  prefs.putFloat(\"len\", S.lengthM);\n  prefs.putUShort(\"dens\", S.density);\n  prefs.putULong(\"col\", S.colUs);\n  prefs.putLong(\"gap\", S.gapUs);\n  prefs.putChar(\"dir\", S.dir);\n  prefs.putUChar(\"bri\", S.bri);\n  prefs.putFloat(\"gam\", S.gamma);\n  prefs.putUChar(\"mode\", S.mode);\n  prefs.putUShort(\"img\", g_img);\n  prefs.putBool(\"auto\", S.autoAdvance);\n  prefs.putFloat(\"mhz\", S.spiMHz);\n  prefs.putUInt(\"cfg\", configHash());\n  prefs.end();\n}\n\nstatic void clearSettings() {\n  prefs.begin(\"pov\", false);\n  prefs.clear();\n  prefs.end();\n}\n\n// ---- geometry and timing ----------------------------------------------------------\nstatic uint16_t ledsFor(float lengthM, uint16_t density) {\n  long n = lroundf(lengthM * density);\n  if (n \u003c 1) n = 1;\n  if (n > POV_NUM_LEDS_MAX) n = POV_NUM_LEDS_MAX;\n  return (uint16_t)n;\n}\n\n// ---- resampling -----------------------------------------------------------------------\n// When the displayed grid (LEDs x columns) is smaller than the stored image in either\n// direction, picking the nearest stored pixel drops whole rows or columns: a thin line\n// can vanish or show at full strength depending on where it falls. Instead the image\n// is resampled once into RAM: each displayed pixel is the area average of the stored\n// pixels it covers, taken in linear light (through the output gamma) so the emitted\n// energy is kept. A thin line then shows at reduced strength instead of disappearing.\n// Pure upsampling (a longer strip) just repeats pixels and needs no RAM.\nstatic uint16_t s_lin16[256];\n\nstatic uint8_t encode16(uint32_t lin) {  // inverse of s_lin16, nearest entry\n  uint16_t lo = 0, hi = 255;\n  while (lo \u003c hi) {\n    const uint16_t mid = (uint16_t)((lo + hi) / 2);\n    if (s_lin16[mid] \u003c lin) lo = (uint16_t)(mid + 1);\n    else hi = mid;\n  }\n  if (lo > 0 && lin - s_lin16[lo - 1] \u003c s_lin16[lo] - lin) lo--;\n  return (uint8_t)lo;\n}\n\nstatic void resampleImage(const PovImage &im, uint8_t *dst, uint16_t rows, uint32_t cols, float gamma) {\n  if (gamma \u003c 0.5f) gamma = 0.5f;\n  for (int v = 0; v \u003c 256; ++v) s_lin16[v] = (uint16_t)lroundf(powf(v / 255.0f, gamma) * 65535.0f);\n  const uint32_t SC = im.cols, SR = im.rows;\n  const uint64_t norm = (uint64_t)SC * SR;\n  // Displayed column kc covers stored columns [kc*SC/cols, (kc+1)*SC/cols); the same\n  // for rows. In units of 1/cols (1/rows) every overlap is an integer.\n  for (uint32_t kc = 0; kc \u003c cols; ++kc) {\n    const uint64_t a = (uint64_t)kc * SC, b = (uint64_t)(kc + 1) * SC;\n    const uint32_t i0 = (uint32_t)(a / cols), i1 = (uint32_t)((b - 1) / cols);\n    for (uint32_t kr = 0; kr \u003c rows; ++kr) {\n      const uint64_t ya = (uint64_t)kr * SR, yb = (uint64_t)(kr + 1) * SR;\n      const uint32_t j0 = (uint32_t)(ya / rows), j1 = (uint32_t)((yb - 1) / rows);\n      uint64_t acc[3] = {0, 0, 0};\n      for (uint32_t j = j0; j \u003c= j1; ++j) {\n        const uint64_t lo = (uint64_t)j * rows, hi = lo + rows;\n        const uint64_t wy = (yb \u003c hi ? yb : hi) - (ya > lo ? ya : lo);\n        for (uint32_t i = i0; i \u003c= i1; ++i) {\n          const uint64_t clo = (uint64_t)i * cols, chi = clo + cols;\n          const uint64_t w = wy * ((b \u003c chi ? b : chi) - (a > clo ? a : clo));\n          const uint8_t *p = im.data + ((uint32_t)i * SR + j) * 3u;\n          acc[0] += w * s_lin16[p[0]];\n          acc[1] += w * s_lin16[p[1]];\n          acc[2] += w * s_lin16[p[2]];\n        }\n      }\n      uint8_t *o = dst + (kc * rows + kr) * 3u;\n      o[0] = encode16((uint32_t)(acc[0] / norm));\n      o[1] = encode16((uint32_t)(acc[1] / norm));\n      o[2] = encode16((uint32_t)(acc[2] / norm));\n    }\n  }\n}\n\n// Rebuilds the pixel source, row/column maps and timing for the current image and strip.\nstatic void applyImage() {\n  const PovImage &im = g_cur;\n\n  // Timing: never faster than the chip can clock out a column.\n  g_wantUs = S.colUs ? S.colUs : im.col_us;\n  const uint32_t minUs = ledout::minColUs();\n  g_colUs = g_wantUs \u003c minUs ? minUs : g_wantUs;\n  g_gapUs = S.gapUs >= 0 ? (uint32_t)S.gapUs : im.gap_us;\n  g_dir = S.dir >= 0 ? (uint8_t)S.dir : im.dir;\n\n  // Columns: keep the designed width and aspect. The image spans\n  // im.cols * im.col_us of eye travel; at another column period that takes a\n  // different number of columns. A longer strip is taller, so it needs\n  // proportionally more columns.\n  double cols = im.cols;\n#if POV_ASPECT_LOCK\n  if (im.length_m > 0.01f) cols *= S.lengthM / im.length_m;\n  if (im.col_us > 0) cols *= (double)im.col_us / (double)g_colUs;\n#endif\n  uint32_t c = (uint32_t)lround(cols);\n  if (c \u003c 1) c = 1;\n  if (c > MAX_COLS) c = MAX_COLS;\n  if (c != g_cols || !g_colMap) {\n    free(g_colMap);\n    g_colMap = (uint16_t *)malloc(c * sizeof(uint16_t));\n    if (!g_colMap) {  // out of RAM: play stored columns 1:1\n      c = im.cols;\n      g_colMap = (uint16_t *)malloc(c * sizeof(uint16_t));\n    }\n  }\n  g_cols = c;\n\n  // Pixel source: the stored image, or a resampled copy when the display grid is\n  // smaller in either direction.\n  free(g_resampled);\n  g_resampled = nullptr;\n  g_nearest = false;\n  g_src = im.data;\n  g_srcRows = im.rows;\n  g_srcCols = im.cols;\n  if (g_n != im.rows || c != im.cols) {\n    if (g_n \u003c im.rows || c \u003c im.cols) {\n      const size_t need = (size_t)g_n * c * 3u;\n      uint8_t *buf = (uint8_t *)heap_caps_malloc(need, MALLOC_CAP_SPIRAM);\n      if (!buf && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > need + 32768u)\n        buf = (uint8_t *)malloc(need);\n      if (buf) {\n        resampleImage(im, buf, g_n, c, S.gamma);\n        g_resampled = buf;\n        g_src = buf;\n        g_srcRows = g_n;\n        g_srcCols = (uint16_t)c;\n      } else {\n        g_nearest = true;  // not enough RAM: rows/columns get skipped\n      }\n    } else {\n      g_nearest = true;    // upsampling only: repeating pixels loses nothing\n    }\n  }\n\n  // Maps from LED / displayed column to the source. Identity (with the data-in\n  // orientation) when the source is the resampled copy.\n  for (uint16_t i = 0; i \u003c g_n; ++i) {\n    const uint32_t pos = POV_DATA_IN_AT_BOTTOM ? (uint32_t)(g_n - 1 - i) : i;\n    uint32_t r = ((2u * pos + 1u) * g_srcRows) / (2u * g_n);\n    if (r >= g_srcRows) r = g_srcRows - 1;\n    g_rowMap[i] = (uint16_t)r;\n  }\n  for (uint32_t k = 0; k \u003c c; ++k) {\n    uint32_t s = ((2u * k + 1u) * g_srcCols) / (2u * c);\n    if (s >= g_srcCols) s = g_srcCols - 1;\n    g_colMap[k] = (uint16_t)s;\n  }\n}\n\nstatic void applyStrip() {\n  const uint16_t n = ledsFor(S.lengthM, S.density);\n  if (n \u003c g_n) ledout::blankAll();  // clear LEDs past the new end\n  g_n = n;\n  ledout::setCount(n);\n  applyImage();\n}\n\nstatic void applyRender() {\n  g_mode = ledout::setRender(S.mode, S.bri, S.gamma);\n  if (g_resampled) applyImage();  // the resampled copy depends on gamma\n}\n\n// ---- playlist ----------------------------------------------------------------------\nstatic uint16_t imageCount() { return povstore::count() ? povstore::count() : COMPILED_COUNT; }\n\n// Makes playlist entry i the current image: a stored slot when any exist, else a\n// compiled-in image. A stored slot that cannot be read falls back to the compiled set.\nstatic void selectImage(uint16_t i) {\n  const uint16_t n = imageCount();\n  g_img = n ? (uint16_t)(i % n) : 0;\n  g_imgSince = millis();\n  free(g_resampled);\n  g_resampled = nullptr;\n  g_src = nullptr;\n  free(g_curBuf);\n  g_curBuf = nullptr;\n  g_curFromStore = false;\n  strcpy(g_curName, \"\");\n  if (povstore::count()) {\n    const char *why = \"\";\n    if (povstore::load(povstore::slotAt((uint8_t)g_img), g_cur, g_curName, &g_curBuf, &why)) {\n      g_curFromStore = true;\n    } else {\n      Serial.printf(\"slot %u failed to load (%s); playing the compiled-in image\\n\",\n                    (unsigned)povstore::slotAt((uint8_t)g_img), why);\n      g_cur = POV_IMAGES[0];\n      strncpy(g_curName, \"compiled-in\", sizeof g_curName);\n    }\n  } else {\n    g_cur = POV_IMAGES[g_img % COMPILED_COUNT];\n    strncpy(g_curName, \"compiled-in\", sizeof g_curName);\n  }\n  applyImage();\n}\n\n// ---- engine -----------------------------------------------------------------------\nstatic inline void spinUntil(int64_t t) {\n  while (esp_timer_get_time() \u003c t) {\n  }\n}\n\nstatic inline const uint8_t *colPtr(const PovImage &, int k) {\n  return g_src + (uint32_t)g_colMap[k] * g_srcRows * 3u;\n}\n\n// Plays displayed columns start, start+step, ... `count` of them, one per\n// column period. Column k+1 is encoded while column k is on the wire.\nstatic void pass(const PovImage &im, int start, int step, int count, bool blankEnd) {\n  int b = g_buf;\n  if (count \u003c= 0) {\n    if (blankEnd) {\n      spinUntil(g_deadline);\n      ledout::build(b, nullptr, g_rowMap);\n      ledout::send(b);\n      ledout::waitDone();\n    }\n    return;\n  }\n  ledout::build(b, colPtr(im, start), g_rowMap);\n  for (int k = 0; k \u003c count; ++k) {\n    spinUntil(g_deadline);\n    if (esp_timer_get_time() - g_deadline > (int64_t)(g_colUs / 4)) g_late++;\n    ledout::send(b);\n    if (k + 1 \u003c count) ledout::build(b ^ 1, colPtr(im, start + step * (k + 1)), g_rowMap);\n    else if (blankEnd) ledout::build(b ^ 1, nullptr, g_rowMap);\n    ledout::waitDone();\n    b ^= 1;\n    g_deadline += g_colUs;\n  }\n  if (blankEnd) {  // last column gets its full period, then dark\n    spinUntil(g_deadline);\n    ledout::send(b);\n    ledout::waitDone();\n  }\n  g_buf = b;\n}\n\nstatic void gapWait() {\n  const int64_t end = g_deadline + g_gapUs;\n  const int64_t now = esp_timer_get_time();\n  if (end - now > 3000) {  // strip is dark: give the CPU back\n    vTaskDelay(pdMS_TO_TICKS((uint32_t)((end - now - 2000) / 1000)));\n    g_lastYield = esp_timer_get_time();\n  }\n  spinUntil(end);\n  g_deadline = end;\n}\n\nstatic void runCycle() {\n  const PovImage &im = g_cur;\n  const int c = (int)g_cols;\n  const int64_t now = esp_timer_get_time();\n  if (now - g_deadline > 2000) g_deadline = now + 50;  // fell behind: restart the clock\n  switch (g_dir) {\n    case POV_DIR_RTL:\n      pass(im, 0, 1, c, true);\n      gapWait();\n      break;\n    case POV_DIR_ALT:\n      pass(im, c - 1, -1, c, true);\n      gapWait();\n      pass(im, 0, 1, c, true);\n      gapWait();\n      break;\n    case POV_DIR_PAL:\n      pass(im, 0, 1, c, false);\n      pass(im, c - 2, -1, c - 1, true);\n      gapWait();\n      break;\n    default:  // POV_DIR_LTR: glance left -> right, so play right column first\n      pass(im, c - 1, -1, c, true);\n      gapWait();\n      break;\n  }\n  g_passes++;\n}\n\nstatic void advancePlaylist() {\n  if (imageCount() \u003c 2 || !S.autoAdvance) return;\n  const uint16_t hold = g_cur.hold_s;\n  if (hold && millis() - g_imgSince >= (uint32_t)hold * 1000u) selectImage(g_img + 1);\n}\n\n// ---- static test frame: wiring, chip type and color order -------------------------\n// Data-in end: 3 LEDs red, then quarters red / green / blue / white at ~25%.\nstatic void showTest() {\n  if (!g_testCol) g_testCol = (uint8_t *)malloc(POV_NUM_LEDS_MAX * 3);\n  if (!g_testCol) return;\n  for (uint16_t i = 0; i \u003c g_n; ++i) {\n    uint8_t *p = g_testCol + i * 3u;\n    const uint8_t q = (uint8_t)((4u * i) / g_n);\n    const uint8_t v = 140;  // ~25% after gamma 2.4\n    p[0] = (q == 0 || q == 3) ? v : 0;\n    p[1] = (q == 1 || q == 3) ? v : 0;\n    p[2] = (q == 2 || q == 3) ? v : 0;\n    if (i \u003c 3) { p[0] = 255; p[1] = 0; p[2] = 0; }\n  }\n  ledout::waitDone();\n  ledout::build(0, g_testCol, g_identity);\n  ledout::send(0);\n  ledout::waitDone();\n  g_buf = 1;\n}\n\n// ---- console ------------------------------------------------------------------------\nstatic void printInfo() {\n  const PovImage &im = g_cur;\n  const uint32_t minUs = ledout::minColUs();\n  Serial.printf(\"\\n-- POV strip %s --\\nchip %s (%s)\", POV_VERSION, ledout::chipName(),\n                LED_IS_CLOCKED(POV_CHIP) ? \"clocked\" : \"single-wire\");\n#if LED_IS_CLOCKED(POV_CHIP)\n  Serial.printf(\", SPI %.2f MHz asked, %.2f MHz actual\", S.spiMHz, ledout::actualHz() / 1e6);\n#endif\n  Serial.printf(\"\\nstrip %.2f m x %u/m = %u LEDs (max %u)\\n\", S.lengthM, S.density, g_n,\n                (unsigned)POV_NUM_LEDS_MAX);\n  Serial.printf(\"wire %lu bits per column -> min column %lu us (%.0f columns/s max)\\n\",\n                (unsigned long)ledout::wireBits(), (unsigned long)minUs, 1e6 / minUs);\n  Serial.printf(\"image %u/%u%s: %s, %u rows x %u cols, sized for %.2f m, hold %u s\\n\", g_img + 1,\n                imageCount(), g_curFromStore ? \"\" : \" (compiled-in)\", g_curName, im.rows, im.cols,\n                im.length_m, im.hold_s);\n  Serial.printf(\"column %lu us (%.0f Hz); %lu columns per pass = %.1f ms; gap %.1f ms\\n\",\n                (unsigned long)g_colUs, 1e6 / g_colUs, (unsigned long)g_cols,\n                g_cols * (double)g_colUs / 1000.0, g_gapUs / 1000.0);\n  if (g_colUs > g_wantUs)\n    Serial.printf(\"  chip-limited: wanted %lu us; fewer, longer columns keep the width\\n\",\n                  (unsigned long)g_wantUs);\n  if (g_resampled)\n    Serial.printf(\"  resampled to %u x %lu in RAM (area average); export for this strip to skip that\\n\",\n                  g_n, (unsigned long)g_cols);\n  else if (g_nearest && (g_n \u003c im.rows || g_cols \u003c im.cols))\n    Serial.println(\"  WARNING: not enough RAM to resample, rows/columns are being skipped; export for this strip\");\n  Serial.printf(\"dir %s%s, render %s, gamma %.2f, bri %u, auto %s\\n\", dirName(g_dir),\n                S.dir \u003c 0 ? \" (image)\" : \"\", modeName(g_mode), S.gamma, S.bri,\n                S.autoAdvance ? \"on\" : \"off\");\n  Serial.printf(\"passes %lu, late columns %lu\", (unsigned long)g_passes, (unsigned long)g_late);\n  if (ledout::errors()) Serial.printf(\", LED output errors %lu\", (unsigned long)ledout::errors());\n  Serial.println();\n}\n\nstatic void printHelp() {\n  Serial.println(\n      \"\\ncommands:\\n\"\n      \"  info                 numbers for the current setup\\n\"\n      \"  len \u003cm>              strip length, e.g. len 3.5\\n\"\n      \"  dens \u003cn>             LEDs per meter\\n\"\n      \"  col \u003cus> | col 0     column period override | use image's\\n\"\n      \"  gap \u003cus> | gap img   dark time after each pass\\n\"\n      \"  dir ltr|rtl|alt|pal|img\\n\"\n      \"  bri \u003c0-255>   gamma \u003cx>   mode full|safe|current\\n\"\n      \"  img \u003cn> | next       select image (1-based)\\n\"\n      \"  auto on|off          playlist advance\\n\"\n      \"  mhz \u003cf>              SPI clock (clocked chips)\\n\"\n      \"  test | test off      static wiring / color-order frame\\n\"\n      \"  save | load | reset  NVS settings\\n\"\n      \"  ls | rm \u003cn> | wipe   images stored on the ESP32 (uploaded by the povstrip tool)\");\n}\n\nstatic void handleCommand(char *line) {\n  char *cmd = strtok(line, \" \\t\");\n  char *arg = strtok(nullptr, \" \\t\");\n  if (!cmd) return;\n  for (char *p = cmd; *p; ++p) *p = (char)tolower(*p);\n\n  if (!strcmp(cmd, \"help\") || !strcmp(cmd, \"?\")) { printHelp(); Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"info\")) { printInfo(); Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"ping\")) { Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"ver\")) { Serial.println(\"pov \" POV_VERSION \" \" __DATE__); Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"save\")) { saveSettings(); Serial.println(\"saved\"); Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"load\") || !strcmp(cmd, \"reset\")) {\n    if (!strcmp(cmd, \"reset\")) { clearSettings(); defaults(); }\n    else loadSettings();\n#if LED_IS_CLOCKED(POV_CHIP)\n    ledout::setClock((uint32_t)(S.spiMHz * 1e6f));\n#endif\n    applyRender();\n    g_img = S.img;\n    applyStrip();\n    selectImage(g_img);\n    printInfo();\n    Serial.println(\"ok\");\n    return;\n  }\n  if (!strcmp(cmd, \"test\")) {\n    g_test = !(arg && !strcmp(arg, \"off\"));\n    if (g_test) showTest();\n    Serial.println(g_test ? \"test frame on ('test off' to resume)\" : \"POV resumed\");\n    Serial.println(\"ok\");\n    return;\n  }\n  if (!strcmp(cmd, \"next\")) { selectImage(g_img + 1); printInfo(); Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"ls\")) { povstore::list(Serial); Serial.println(\"ok\"); return; }\n  if (!strcmp(cmd, \"wipe\")) {\n    povstore::wipe();\n    selectImage(0);\n    Serial.println(\"store emptied; playing the compiled-in image\");\n    Serial.println(\"ok\");\n    return;\n  }\n  if (!strcmp(cmd, \"put\")) {\n    char *a2 = strtok(nullptr, \" \\t\");\n    char *a3 = strtok(nullptr, \" \\t\");\n    if (!arg || !a2 || !a3) { Serial.println(\"err usage: put \u003cslot> \u003cbytes> \u003ccrc32hex>\"); return; }\n    const uint8_t slot = (uint8_t)atoi(arg);\n    const uint32_t bytes = (uint32_t)strtoul(a2, nullptr, 10);\n    const uint32_t crc = (uint32_t)strtoul(a3, nullptr, 16);\n    ledout::waitDone();\n    ledout::build(0, nullptr, g_rowMap);   // dark while the transfer runs\n    ledout::send(0);\n    ledout::waitDone();\n    g_buf = 1;\n    const bool ok = povstore::receive(Serial, slot, bytes, crc);\n    if (ok) {\n      // play the new slot right away\n      uint16_t idx = 0;\n      for (uint8_t k = 0; k \u003c povstore::count(); ++k) if (povstore::slotAt(k) == slot) idx = k;\n      selectImage(idx);\n    } else {\n      selectImage(g_img);\n    }\n    return;   // receive() already printed ok/err\n  }\n  if (!strcmp(cmd, \"rm\")) {\n    if (!arg) { Serial.println(\"err usage: rm \u003cslot>\"); return; }\n    if (!povstore::remove((uint8_t)atoi(arg))) { Serial.println(\"err no such slot\"); return; }\n    selectImage(g_img);\n    Serial.println(\"ok\");\n    return;\n  }\n  if (!arg) { Serial.println(\"err missing value; 'help' lists commands\"); return; }\n\n  if (!strcmp(cmd, \"len\")) {\n    const float v = atof(arg);\n    if (v \u003c 0.05f) { Serial.println(\"err len: meters, e.g. len 2.5\"); return; }\n    S.lengthM = v;\n    if (ledsFor(v, S.density) == POV_NUM_LEDS_MAX && lroundf(v * S.density) > POV_NUM_LEDS_MAX)\n      Serial.printf(\"capped at POV_NUM_LEDS_MAX = %u\\n\", (unsigned)POV_NUM_LEDS_MAX);\n    applyStrip();\n  } else if (!strcmp(cmd, \"dens\")) {\n    const int v = atoi(arg);\n    if (v \u003c 1) { Serial.println(\"err dens: LEDs per meter\"); return; }\n    S.density = (uint16_t)v;\n    applyStrip();\n  } else if (!strcmp(cmd, \"col\")) {\n    S.colUs = (uint32_t)strtoul(arg, nullptr, 10);\n    applyImage();\n  } else if (!strcmp(cmd, \"gap\")) {\n    S.gapUs = !strcmp(arg, \"img\") ? -1 : (int32_t)strtol(arg, nullptr, 10);\n    applyImage();\n  } else if (!strcmp(cmd, \"dir\")) {\n    if (!strcmp(arg, \"ltr\")) S.dir = POV_DIR_LTR;\n    else if (!strcmp(arg, \"rtl\")) S.dir = POV_DIR_RTL;\n    else if (!strcmp(arg, \"alt\")) S.dir = POV_DIR_ALT;\n    else if (!strcmp(arg, \"pal\")) S.dir = POV_DIR_PAL;\n    else S.dir = -1;\n    applyImage();\n  } else if (!strcmp(cmd, \"bri\")) {\n    const int v = atoi(arg);\n    S.bri = (uint8_t)(v \u003c 0 ? 0 : v > 255 ? 255 : v);\n    applyRender();\n  } else if (!strcmp(cmd, \"gamma\")) {\n    S.gamma = atof(arg);\n    if (S.gamma \u003c 0.5f) S.gamma = 0.5f;\n    applyRender();\n  } else if (!strcmp(cmd, \"mode\")) {\n    S.mode = !strcmp(arg, \"safe\") ? RENDER_PWM_SAFE : !strcmp(arg, \"current\") ? RENDER_CURRENT : RENDER_FULL;\n    applyRender();\n    if (g_mode != S.mode) Serial.println(\"current mode needs SK9822 or HD107S; using safe\");\n  } else if (!strcmp(cmd, \"img\")) {\n    const int v = atoi(arg);\n    if (v \u003c 1 || v > imageCount()) { Serial.printf(\"err img: 1..%u\\n\", imageCount()); return; }\n    selectImage((uint16_t)(v - 1));\n  } else if (!strcmp(cmd, \"auto\")) {\n    S.autoAdvance = !strcmp(arg, \"on\");\n  } else if (!strcmp(cmd, \"mhz\")) {\n#if LED_IS_CLOCKED(POV_CHIP)\n    const float v = atof(arg);\n    if (v \u003c 0.1f || v > 40.0f) { Serial.println(\"err mhz: 0.1 to 40\"); return; }\n    S.spiMHz = v;\n    if (!ledout::setClock((uint32_t)(v * 1e6f))) Serial.println(\"SPI clock change failed\");\n    applyImage();\n#else\n    Serial.println(\"err mhz only applies to clocked chips\");\n    return;\n#endif\n  } else {\n    Serial.println(\"err unknown command; 'help' lists them\");\n    return;\n  }\n  if (g_test) showTest();\n  printInfo();\n  Serial.println(\"ok\");\n}\n\nstatic void serviceSerial() {\n  static char line[96];\n  static uint8_t len = 0;\n  static uint32_t lastRx = 0;\n  static bool tipShown = false;\n  while (Serial.available()) {\n    const int c = Serial.read();\n    lastRx = millis();\n    if (c == '\\r' || c == '\\n') {\n      if (len) {\n        line[len] = 0;\n        handleCommand(line);\n        len = 0;\n      }\n    } else if (len \u003c sizeof(line) - 1) {\n      line[len++] = (char)c;\n    }\n  }\n  // Serial Monitor on \"No Line Ending\": run the text after 1 s of quiet.\n  if (len && millis() - lastRx > 1000) {\n    line[len] = 0;\n    handleCommand(line);\n    len = 0;\n    if (!tipShown) {\n      Serial.println(\"(set the Serial Monitor line ending to New Line for instant commands)\");\n      tipShown = true;\n    }\n  }\n}\n\n// ---- Arduino entry points ------------------------------------------------------------\nvoid setup() {\n  Serial.setRxBufferSize(8192);   // room for one upload chunk and then some\n  Serial.begin(POV_SERIAL_BAUD);\n  Serial.setTimeout(3000);        // per chunk, during \"put\"\n  for (uint16_t i = 0; i \u003c POV_NUM_LEDS_MAX; ++i) g_identity[i] = i;\n  loadSettings();\n  g_n = ledsFor(S.lengthM, S.density);\n  if (!ledout::begin(POV_NUM_LEDS_MAX, g_n, (uint32_t)(S.spiMHz * 1e6f))) {\n    Serial.println(\"LED output init failed: check pins / POV_NUM_LEDS_MAX\");\n  }\n  ledout::blankAll();\n  applyRender();\n  const bool store = povstore::begin();\n  selectImage(S.img);\n  delay(300);\n  if (!store) Serial.println(\"\\nno LittleFS partition: images cannot be uploaded, playing the compiled-in set\");\n  if (g_savedStale) Serial.println(\"\\nsaved settings skipped: config.h changed since 'save'\");\n  printInfo();\n  printHelp();\n  Serial.println(\"ready\");\n  g_lastYield = esp_timer_get_time();\n  g_deadline = g_lastYield + 1000;\n}\n\nvoid loop() {\n  serviceSerial();\n  if (g_test) {\n    delay(20);\n    return;\n  }\n  advancePlaylist();\n  runCycle();\n  // Let the idle task run now and then (single-core chips watchdog it).\n  if (esp_timer_get_time() - g_lastYield > 200000) {\n    vTaskDelay(1);\n    g_lastYield = esp_timer_get_time();\n  }\n}\n", "pov_strip/config.h": "// config.h - hardware and default settings.\n// Everything marked (runtime) can also be changed over serial and saved to flash.\n// Names carry a POV_ prefix so they cannot collide with FastLED or the core.\n#pragma once\n#include \"pov_types.h\"\n\n// ---- Strip -------------------------------------------------------------------\n#define POV_CHIP              LED_WS2812B  // see pov_types.h. A clocked strip (APA102,\n                                           // SK9822, HD107S) also needs CI on POV_PIN_CLOCK.\n\n#define POV_LENGTH_M          2.0f   // (runtime \"len\")  1.0 to 5.0 m\n#define POV_LEDS_PER_M        60     // (runtime \"dens\") 30, 60, 96, 144 ...\n#define POV_NUM_LEDS_MAX      720    // buffer size: 5 m x 144/m. Raise for denser strips.\n\n#define POV_DATA_IN_AT_BOTTOM 1      // 1: LED 0 is at the bottom of the vertical strip\n\n// ---- Pins: GPIO numbers, not board labels --------------------------------------\n// ESP32 DevKit: label D4 = GPIO4. XIAO ESP32S3 labels differ (D4 = GPIO5); its\n// usual pair is data 9 (D10), clock 7 (D8).\n#define POV_PIN_DATA          4      // D4\n#define POV_PIN_CLOCK         18     // D18, clocked chips only\n\n// ---- Clocked chips (APA102 / SK9822 / HD107S) -----------------------------------\n#define POV_SPI_MHZ           16     // (runtime \"mhz\") start ~8, raise until the far end\n                                     // glitches. SK9822 and HD107S datasheets list 30 MHz\n                                     // max; APA102's datasheet gives no limit.\n#define POV_CLOCKED_ORDER     \"BGR\"  // byte order on the wire after the 0xE0 header\n\n// ---- Single-wire chips (WS281x / SK6812) -----------------------------------------\n#define POV_FASTLED_ORDER     GRB    // FastLED EOrder token\n#define POV_RESET_US          0      // 0 = chip default (80 us SK6812, 280-300 us others)\n\n// ---- Rendering ------------------------------------------------------------------\n#define POV_BRIGHTNESS        255    // (runtime \"bri\")\n#define POV_GAMMA             2.4f   // (runtime \"gamma\")\n#define POV_RENDER            RENDER_FULL  // (runtime \"mode\")\n\n// ---- Timing defaults --------------------------------------------------------------\n// The image header carries the column period, gap and direction it was designed\n// for. These override it (runtime \"col\" / \"gap\" / \"dir\").\n#define POV_COL_US_OVERRIDE   0      // 0 = use the image's column period\n#define POV_GAP_US_OVERRIDE   -1     // -1 = use the image's gap (0 is a valid gap)\n#define POV_DIR_OVERRIDE      -1     // -1 = use the image's direction, else POV_DIR_*\n\n// Keep the image's aspect when the strip length changes at runtime by\n// resampling the column count (1), or play the stored columns as-is (0).\n#define POV_ASPECT_LOCK       1\n\n#define POV_SERIAL_BAUD       115200\n", "pov_strip/led_out.h": "// led_out.h - one column out to the strip, for every supported chip.\n//\n// Clocked chips (APA102 / SK9822 / HD107S): ESP-IDF SPI master with DMA and two\n// frame buffers, so the next column is encoded while the current one is on the\n// wire. Single-wire chips (WS281x / SK6812): FastLED.\n//\n// API (same for both paths):\n//   begin(nMax, n, hz)      allocate for nMax LEDs, start with n active\n//   setCount(n)             active LED count (\u003c= nMax)\n//   build(i, col, map)      stage column into buffer i (0/1); col == nullptr -> black\n//   send(i)                 start output of buffer i\n//   waitDone()              block until the wire is idle\n//   minColUs()              shortest column period the chip + strip allow\n//   blankAll()              clear every LED up to nMax (after shrinking n)\n#pragma once\n#include \u003cArduino.h>\n#include \u003cmath.h>\n#include \"config.h\"\n\n#if LED_IS_CLOCKED(POV_CHIP)\n  #include \"driver/spi_master.h\"\n  #include \"esp_heap_caps.h\"\n  #include \"esp_idf_version.h\"\n#else\n  #include \u003cFastLED.h>\n#endif\n\n#if defined(CONFIG_IDF_TARGET_ESP32) && \\\n    ((POV_PIN_DATA >= 6 && POV_PIN_DATA \u003c= 11) || (LED_IS_CLOCKED(POV_CHIP) && POV_PIN_CLOCK >= 6 && POV_PIN_CLOCK \u003c= 11))\n  #error \"GPIO 6-11 are the flash pins on ESP32. Set POV_PIN_DATA / POV_PIN_CLOCK in config.h (DevKit: 23 / 18).\"\n#endif\n#if defined(CONFIG_IDF_TARGET_ESP32S3) && \\\n    ((POV_PIN_DATA >= 26 && POV_PIN_DATA \u003c= 32) || (LED_IS_CLOCKED(POV_CHIP) && POV_PIN_CLOCK >= 26 && POV_PIN_CLOCK \u003c= 32))\n  #error \"GPIO 26-32 are the flash pins on ESP32-S3. Set POV_PIN_DATA / POV_PIN_CLOCK in config.h.\"\n#endif\n\n#if POV_CHIP == LED_SK9822 || POV_CHIP == LED_HD107S\n  #define POV_CURRENT_GB 1   // 5-bit field sets drive current, not a second PWM\n#else\n  #define POV_CURRENT_GB 0\n#endif\n\nnamespace ledout {\n\n// ---- rendering state, rebuilt by setRender() ------------------------------------\nstatic uint8_t s_lut8[256];   // sRGB -> output PWM value\nstatic uint8_t s_lut5[256];   // sRGB -> 0..31 current level (RENDER_CURRENT)\nstatic uint8_t s_gb = 31;     // 5-bit field for FULL / PWM_SAFE\nstatic uint8_t s_on = 255;    // \"on\" value for PWM_SAFE\nstatic uint8_t s_mode = RENDER_FULL;\n\nstatic const char *chipName() {\n  switch (POV_CHIP) {\n    case LED_APA102: return \"APA102\";\n    case LED_SK9822: return \"SK9822\";\n    case LED_HD107S: return \"HD107S\";\n    case LED_WS2812B: return \"WS2812B\";\n    case LED_WS2812B_V5: return \"WS2812B-V5\";\n    case LED_SK6812: return \"SK6812\";\n    case LED_WS2811: return \"WS2811\";\n    case LED_WS2813: return \"WS2813\";\n    case LED_WS2815: return \"WS2815\";\n  }\n  return \"?\";\n}\n\n// Returns the mode actually used (RENDER_CURRENT falls back on chips without\n// current control).\nstatic uint8_t setRender(uint8_t mode, uint8_t bri, float gamma) {\n  if (mode == RENDER_CURRENT && !POV_CURRENT_GB) mode = RENDER_PWM_SAFE;\n  s_mode = mode;\n  if (gamma \u003c 0.5f) gamma = 0.5f;\n  // Chips with current control dim through the 5-bit field so the PWM duty\n  // (and its gaps) is not shortened; the rest dim in the 8-bit value.\n  const float scale8 = POV_CURRENT_GB ? 255.0f : 255.0f * bri / 255.0f;\n  for (int v = 0; v \u003c 256; ++v) {\n    const float g = powf(v / 255.0f, gamma);\n    s_lut8[v] = (uint8_t)lroundf(g * scale8);\n    s_lut5[v] = (uint8_t)lroundf(g * 31.0f * bri / 255.0f);\n  }\n  s_gb = POV_CURRENT_GB ? (uint8_t)lroundf(31.0f * bri / 255.0f) : 31;\n  if (POV_CURRENT_GB && bri > 0 && s_gb == 0) s_gb = 1;\n  // PWM-safe means no PWM gaps inside a column, so the on value is always full.\n  // Chips with current control still dim through s_gb; the others ignore bri here.\n  s_on = 255;\n  return mode;\n}\n\n#if LED_IS_CLOCKED(POV_CHIP)\n// =================================================================================\n// Clocked: SPI + DMA\n// Frame: start (32 x 0) | n x [0xE0|gb, c0, c1, c2] | reset (32 x 0) | end (>= n/2 bits of 0)\n// The reset frame makes SK9822 latch now instead of on the next frame; APA102\n// ignores it. Zero end bits keep LEDs past n untouched.\n// =================================================================================\nstatic spi_device_handle_t s_dev = nullptr;\nstatic uint8_t *s_buf[2] = {nullptr, nullptr};\nstatic spi_transaction_t s_tr[2];\nstatic bool s_busy = false;\nstatic uint16_t s_nMax = 0, s_n = 0;\nstatic uint32_t s_bytes = 0;\nstatic int s_hz = 0;\nstatic uint8_t s_ord[3] = {2, 1, 0};  // wire byte k \u003c- source channel s_ord[k]\nstatic uint32_t s_errs = 0;           // failed SPI queue calls (shown by \"info\")\n\nstatic inline uint32_t frameBytes(uint16_t n) {\n  const uint32_t endBytes = (n + 15u) / 16u + 1u;\n  const uint32_t b = 4u + 4u * n + 4u + endBytes;\n  return (b + 3u) & ~3u;\n}\n\nstatic void parseOrder(const char *o) {\n  for (int k = 0; k \u003c 3; ++k) {\n    const char c = o[k];\n    s_ord[k] = (c == 'R' || c == 'r') ? 0 : (c == 'G' || c == 'g') ? 1 : 2;\n  }\n}\n\nstatic bool addDevice(uint32_t hz) {\n  spi_device_interface_config_t dc;\n  memset(&dc, 0, sizeof dc);\n  dc.clock_speed_hz = (int)hz;\n  dc.mode = 0;\n  dc.spics_io_num = -1;\n  dc.queue_size = 2;\n  dc.flags = SPI_DEVICE_HALFDUPLEX | SPI_DEVICE_NO_DUMMY;  // write-only\n  if (spi_bus_add_device(SPI2_HOST, &dc, &s_dev) != ESP_OK) {\n    s_dev = nullptr;\n    return false;\n  }\n#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)\n  int khz = 0;\n  if (spi_device_get_actual_freq(s_dev, &khz) == ESP_OK) s_hz = khz * 1000;\n  else s_hz = (int)hz;\n#else\n  s_hz = spi_get_actual_clock(80000000, (int)hz, 128);\n#endif\n  return true;\n}\n\nstatic void waitDone() {\n  if (!s_busy || !s_dev) return;\n  spi_transaction_t *done = nullptr;\n  spi_device_get_trans_result(s_dev, &done, portMAX_DELAY);\n  s_busy = false;\n}\n\nstatic bool begin(uint16_t nMax, uint16_t n, uint32_t hz) {\n  s_nMax = nMax;\n  const uint32_t maxBytes = frameBytes(nMax);\n  for (int i = 0; i \u003c 2; ++i) {\n    s_buf[i] = (uint8_t *)heap_caps_malloc(maxBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);\n    if (!s_buf[i]) return false;\n    memset(s_buf[i], 0, maxBytes);\n    memset(&s_tr[i], 0, sizeof s_tr[i]);\n    s_tr[i].tx_buffer = s_buf[i];\n  }\n  parseOrder(POV_CLOCKED_ORDER);\n\n  spi_bus_config_t bus;\n  memset(&bus, 0, sizeof bus);\n  bus.mosi_io_num = POV_PIN_DATA;\n  bus.miso_io_num = -1;\n  bus.sclk_io_num = POV_PIN_CLOCK;\n  bus.quadwp_io_num = -1;\n  bus.quadhd_io_num = -1;\n  bus.data4_io_num = -1;\n  bus.data5_io_num = -1;\n  bus.data6_io_num = -1;\n  bus.data7_io_num = -1;\n  bus.max_transfer_sz = (int)maxBytes;\n  if (spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO) != ESP_OK) return false;\n  if (!addDevice(hz)) return false;\n  s_n = n > nMax ? nMax : n;\n  s_bytes = frameBytes(s_n);\n  return true;\n}\n\nstatic bool setClock(uint32_t hz) {\n  waitDone();\n  if (s_dev) spi_bus_remove_device(s_dev);\n  s_dev = nullptr;\n  return addDevice(hz);\n}\n\nstatic int actualHz() { return s_hz; }\n\nstatic void setCount(uint16_t n) {\n  waitDone();\n  s_n = n > s_nMax ? s_nMax : n;\n  s_bytes = frameBytes(s_n);\n}\n\n// Wire time for one column, plus a fixed allowance for queueing the DMA.\nstatic uint32_t minColUs() {\n  const double us = (double)s_bytes * 8.0 * 1e6 / (double)(s_hz > 0 ? s_hz : 1);\n  return (uint32_t)ceil(us) + 25;\n}\n\nstatic uint32_t wireBits() { return s_bytes * 8u; }\n\n// col: this column's pixels (RGB888, image rows); map[i]: image row for LED i.\nstatic void build(int i, const uint8_t *col, const uint16_t *map) {\n  uint8_t *p = s_buf[i];\n  p[0] = p[1] = p[2] = p[3] = 0;\n  p += 4;\n  const uint16_t n = s_n;\n  const uint8_t o0 = s_ord[0], o1 = s_ord[1], o2 = s_ord[2];\n  if (!col) {\n    for (uint16_t k = 0; k \u003c n; ++k, p += 4) { p[0] = 0xE0; p[1] = p[2] = p[3] = 0; }\n  } else if (s_mode == RENDER_FULL) {\n    const uint8_t hdr = 0xE0 | s_gb;\n    for (uint16_t k = 0; k \u003c n; ++k, p += 4) {\n      const uint8_t *s = col + (uint32_t)map[k] * 3u;\n      p[0] = hdr; p[1] = s_lut8[s[o0]]; p[2] = s_lut8[s[o1]]; p[3] = s_lut8[s[o2]];\n    }\n  } else if (s_mode == RENDER_PWM_SAFE) {\n    const uint8_t hdr = 0xE0 | s_gb, on = s_on;\n    for (uint16_t k = 0; k \u003c n; ++k, p += 4) {\n      const uint8_t *s = col + (uint32_t)map[k] * 3u;\n      p[0] = hdr;\n      p[1] = s[o0] >= 128 ? on : 0; p[2] = s[o1] >= 128 ? on : 0; p[3] = s[o2] >= 128 ? on : 0;\n    }\n  } else {  // RENDER_CURRENT\n    for (uint16_t k = 0; k \u003c n; ++k, p += 4) {\n      const uint8_t *s = col + (uint32_t)map[k] * 3u;\n      uint8_t m = s[0] > s[1] ? s[0] : s[1];\n      if (s[2] > m) m = s[2];\n      const uint8_t lvl = s_lut5[m];\n      if (!lvl) { p[0] = 0xE0; p[1] = p[2] = p[3] = 0; continue; }\n      // a channel is on when it is at least half of the brightest channel\n      p[0] = 0xE0 | lvl;\n      p[1] = (uint16_t)s[o0] * 2u >= m ? 255 : 0;\n      p[2] = (uint16_t)s[o1] * 2u >= m ? 255 : 0;\n      p[3] = (uint16_t)s[o2] * 2u >= m ? 255 : 0;\n    }\n  }\n  // reset + end frames\n  memset(p, 0, s_bytes - (uint32_t)(p - s_buf[i]));\n}\n\nstatic void send(int i) {\n  if (!s_dev) return;\n  waitDone();\n  s_tr[i].length = s_bytes * 8u;\n  s_tr[i].rxlength = 0;\n  if (spi_device_queue_trans(s_dev, &s_tr[i], portMAX_DELAY) == ESP_OK) s_busy = true;\n  else s_errs++;\n}\n\nstatic uint32_t errors() { return s_errs; }\n\nstatic void blankAll() {\n  const uint16_t keep = s_n;\n  setCount(s_nMax);\n  build(0, nullptr, nullptr);\n  send(0);\n  waitDone();\n  setCount(keep);\n}\n\n#else\n// =================================================================================\n// Single-wire: FastLED. Bit periods and resets follow FastLED 3.10 timing tables.\n// =================================================================================\n#if POV_CHIP == LED_WS2812B\n  #define POV_FL_CHIP WS2812B\n  #define POV_BIT_NS 1250\n  #define POV_CHIP_RESET_US 280\n#elif POV_CHIP == LED_WS2812B_V5\n  #if defined(FASTLED_VERSION) && FASTLED_VERSION >= 3010000\n    #define POV_FL_CHIP WS2812BV5\n    #define POV_BIT_NS 1225\n  #else\n    #define POV_FL_CHIP WS2812B\n    #define POV_BIT_NS 1250\n  #endif\n  #define POV_CHIP_RESET_US 280\n#elif POV_CHIP == LED_SK6812\n  #define POV_FL_CHIP SK6812\n  #define POV_BIT_NS 1200\n  #define POV_CHIP_RESET_US 80\n#elif POV_CHIP == LED_WS2811\n  #define POV_FL_CHIP WS2811\n  #define POV_BIT_NS 1250\n  #define POV_CHIP_RESET_US 280\n#elif POV_CHIP == LED_WS2813\n  #define POV_FL_CHIP WS2813\n  #define POV_BIT_NS 1280\n  #define POV_CHIP_RESET_US 300\n#elif POV_CHIP == LED_WS2815\n  #define POV_FL_CHIP WS2815\n  #define POV_BIT_NS 1890\n  #define POV_CHIP_RESET_US 300\n#else\n  #error \"Unknown POV_CHIP\"\n#endif\n\nstatic CRGB s_leds[POV_NUM_LEDS_MAX];\nstatic CLEDController *s_ctl = nullptr;\nstatic const uint8_t *s_stage[2] = {nullptr, nullptr};\nstatic const uint16_t *s_map = nullptr;\nstatic uint16_t s_nMax = 0, s_n = 0;\n\nstatic uint32_t resetUs() { return POV_RESET_US > 0 ? (uint32_t)POV_RESET_US : (uint32_t)POV_CHIP_RESET_US; }\n\nstatic bool begin(uint16_t nMax, uint16_t n, uint32_t /*hz*/) {\n  s_nMax = nMax;\n  // Register the full buffer so FastLED sizes everything for nMax, then shrink.\n  s_ctl = &FastLED.addLeds\u003cPOV_FL_CHIP, POV_PIN_DATA, POV_FASTLED_ORDER>(s_leds, nMax);\n  FastLED.setDither(DISABLE_DITHER);\n  FastLED.setCorrection(UncorrectedColor);\n  FastLED.setTemperature(UncorrectedTemperature);\n  FastLED.setBrightness(255);         // brightness is in our LUT\n  FastLED.setMaxRefreshRate(0, false);  // we schedule columns ourselves\n  s_n = n > nMax ? nMax : n;\n  s_ctl->setLeds(s_leds, s_n);\n  return true;\n}\n\n// Unused on single-wire chips; kept so both paths share one API.\n__attribute__((unused)) static bool setClock(uint32_t) { return true; }\n__attribute__((unused)) static int actualHz() { return (int)(1e9 / POV_BIT_NS); }\n\nstatic void setCount(uint16_t n) {\n  s_n = n > s_nMax ? s_nMax : n;\n  s_ctl->setLeds(s_leds, s_n);\n}\n\nstatic uint32_t wireBits() { return 24u * s_n; }\n\n// Data time + latch gap the chip needs between columns.\nstatic uint32_t minColUs() {\n  return (uint32_t)((uint64_t)s_n * 24u * POV_BIT_NS / 1000u) + resetUs() + 25;\n}\n\n// FastLED has one pixel buffer, so build() only records the column; send()\n// encodes it right after the deadline. Costs a few tens of us of fixed latency.\n// FastLED 3.10 copies the pixels into its own buffer and returns from show()\n// while the RMT peripheral is still clocking them out; the next show() waits\n// for that to finish. The column period already covers data time plus latch.\nstatic void build(int i, const uint8_t *col, const uint16_t *map) {\n  s_stage[i] = col;\n  s_map = map;\n}\n\nstatic void send(int i) {\n  const uint8_t *col = s_stage[i];\n  const uint16_t n = s_n;\n  if (!col) {\n    for (uint16_t k = 0; k \u003c n; ++k) s_leds[k] = CRGB(0, 0, 0);\n  } else if (s_mode == RENDER_FULL) {\n    for (uint16_t k = 0; k \u003c n; ++k) {\n      const uint8_t *s = col + (uint32_t)s_map[k] * 3u;\n      s_leds[k] = CRGB(s_lut8[s[0]], s_lut8[s[1]], s_lut8[s[2]]);\n    }\n  } else {  // RENDER_PWM_SAFE (CURRENT falls back here): full on or off, no PWM gaps\n    for (uint16_t k = 0; k \u003c n; ++k) {\n      const uint8_t *s = col + (uint32_t)s_map[k] * 3u;\n      s_leds[k] = CRGB(s[0] >= 128 ? 255 : 0, s[1] >= 128 ? 255 : 0, s[2] >= 128 ? 255 : 0);\n    }\n  }\n  FastLED.show();\n}\n\nstatic void waitDone() {}\n\nstatic uint32_t errors() { return 0; }\n\nstatic void blankAll() {\n  const uint16_t keep = s_n;\n  setCount(s_nMax);\n  for (uint16_t k = 0; k \u003c s_nMax; ++k) s_leds[k] = CRGB(0, 0, 0);\n  FastLED.show();  // the next show() waits for this transmission to finish\n  setCount(keep);\n}\n#endif\n\n}  // namespace ledout\n", "pov_strip/pov_types.h": "// pov_types.h - constants and the image record shared by config.h,\n// pov_image.h (exported by POV Studio) and the firmware.\n#pragma once\n#include \u003cstdint.h>\n\n// ---- LED chip types --------------------------------------------------------\n// Clocked (data + clock), driven by ESP32 SPI + DMA\n#define LED_APA102      1   // 8-bit PWM ~19.2 kHz; 5-bit global = slow PWM (~440 Hz), so it stays at 31\n#define LED_SK9822      2   // 8-bit PWM (4.7 kHz measured, 1.2 kHz in one datasheet); 5-bit global = current\n#define LED_HD107S      3   // 8-bit PWM ~26 kHz; 5-bit global = current\n// Single data line, driven by FastLED\n#define LED_WS2812B     10  // 800 kHz, PWM ~430 Hz on older parts\n#define LED_WS2812B_V5  11  // 800 kHz, PWM (\"refresh\") 2 kHz, reset > 280 us\n#define LED_SK6812      12  // 800 kHz, PWM ~1.1 kHz (RGB only)\n#define LED_WS2811      13  // 800 kHz mode\n#define LED_WS2813      14  // 800 kHz\n#define LED_WS2815      15  // FastLED drives it at ~530 kHz (1.89 us/bit)\n\n#define LED_IS_CLOCKED(t)  ((t) \u003c 10)\n\n// ---- Viewing direction -----------------------------------------------------\n// A glance left->right paints later columns further LEFT on the retina, so the\n// image has to play right-to-left in time. Pick what your viewers will do.\n#define POV_DIR_LTR   0  // viewers glance left -> right (sign / cue on the left)\n#define POV_DIR_RTL   1  // viewers glance right -> left\n#define POV_DIR_ALT   2  // alternate passes: LTR order, gap, RTL order, gap\n#define POV_DIR_PAL   3  // palindrome: forward + reverse, then gap (any glance sees\n                         // the image next to its mirror)\n\n// ---- Render modes ------------------------------------------------------------\n#define RENDER_FULL     0  // 8-bit color through gamma\n#define RENDER_PWM_SAFE 1  // each channel fully on or off: no PWM gaps inside a column\n#define RENDER_CURRENT  2  // SK9822 / HD107S only: PWM pinned on, per-LED brightness\n                           // through the 5-bit current field (8 hues x 32 levels)\n\n// ---- Image record ------------------------------------------------------------\n// data: column-major RGB888. Column c starts at data + c*rows*3.\n//       Row 0 is the TOP of the image.\ntypedef struct {\n  const uint8_t *data;\n  uint16_t rows;      // pixels along the strip\n  uint16_t cols;      // time steps per pass\n  uint32_t col_us;    // design column period\n  uint32_t gap_us;    // dark time after each pass\n  uint8_t  dir;       // POV_DIR_*\n  float    length_m;  // strip length the image was sized for (0 = unknown)\n  uint16_t hold_s;    // seconds on screen before the playlist advances\n} PovImage;\n", "pov_strip/pov_store.h": "// pov_store.h - images kept on the ESP32 itself (LittleFS), uploaded over serial.\n//\n// Slots /img/01.pov .. /img/32.pov play in order. A .pov file is a 48-byte header\n// followed by column-major RGB888 (rows x cols x 3), the same layout as pov_image.h:\n//\n//   offset  size  field\n//   0       4     \"POV1\"\n//   4       2     rows      (uint16, LEDs along the strip at export)\n//   6       2     cols      (uint16, columns per pass)\n//   8       4     col_us    (uint32, design column period)\n//   12      4     gap_us    (uint32, dark time after each pass)\n//   16      1     dir       (POV_DIR_*)\n//   17      1     reserved\n//   18      2     hold_s    (uint16, seconds before the playlist advances; 0 = stay)\n//   20      4     length_m  (float32, strip length the image was sized for)\n//   24      24    name      (UTF-8, zero padded)\n//   48      ...   pixels\n//\n// Serial upload (\"put\"):\n//   host:   put \u003cslot> \u003cbytes> \u003ccrc32 hex>\\n      (slot 1..32, bytes = whole file)\n//   device: go\\n\n//   host:   bytes, in chunks of at most 1024\n//   device: .\\n   after every chunk it has written\n//   device: ok \u003cbytes>\\n  or  err \u003creason>\\n\n// CRC32 is the usual reflected 0xEDB88320 one (zlib, Python binascii.crc32).\n// When no slots exist the compiled-in POV_IMAGES from pov_image.h play instead.\n#pragma once\n#include \u003cArduino.h>\n#include \u003cLittleFS.h>\n#include \"esp_heap_caps.h\"\n#include \"pov_types.h\"\n\nnamespace povstore {\n\nstatic const uint8_t SLOTS = 32;\nstatic const uint32_t HEADER_BYTES = 48;\nstatic const uint32_t MAX_FILE_BYTES = 2u * 1024u * 1024u;\nstatic const uint32_t CHUNK = 1024;\n\nstatic bool s_ok = false;          // filesystem mounted\nstatic bool s_have[SLOTS + 1];     // slot present (1-based)\nstatic uint8_t s_order[SLOTS];     // playlist: slot numbers in order\nstatic uint8_t s_count = 0;\nstatic uint32_t s_crcTable[256];\n\nstatic void crcInit() {\n  for (uint32_t n = 0; n \u003c 256; ++n) {\n    uint32_t c = n;\n    for (int k = 0; k \u003c 8; ++k) c = (c & 1u) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);\n    s_crcTable[n] = c;\n  }\n}\nstatic uint32_t crcUpdate(uint32_t crc, const uint8_t *p, size_t n) {\n  while (n--) crc = s_crcTable[(crc ^ *p++) & 0xFFu] ^ (crc >> 8);\n  return crc;\n}\n\nstatic const char *slotPath(uint8_t slot) {\n  static char path[20];\n  snprintf(path, sizeof path, \"/img/%02u.pov\", (unsigned)slot);\n  return path;\n}\n\nstatic void scan() {\n  s_count = 0;\n  for (uint8_t i = 1; i \u003c= SLOTS; ++i) {\n    s_have[i] = s_ok && LittleFS.exists(slotPath(i));\n    if (s_have[i]) s_order[s_count++] = i;\n  }\n}\n\nstatic bool begin() {\n  crcInit();\n  s_ok = LittleFS.begin(true);  // formats on first use\n  if (s_ok) LittleFS.mkdir(\"/img\");\n  scan();\n  return s_ok;\n}\n\nstatic uint8_t count() { return s_count; }\n\nstatic uint8_t slotAt(uint8_t idx) { return idx \u003c s_count ? s_order[idx] : 0; }\n\nstatic uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] \u003c\u003c 8)); }\nstatic uint32_t rd32(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] \u003c\u003c 8) | ((uint32_t)p[2] \u003c\u003c 16) | ((uint32_t)p[3] \u003c\u003c 24); }\n\n// Parses a header; false if it is not a POV1 file with sane dimensions.\nstatic bool parseHeader(const uint8_t *h, PovImage &im, char *name, uint32_t fileBytes) {\n  if (memcmp(h, \"POV1\", 4) != 0) return false;\n  im.rows = rd16(h + 4);\n  im.cols = rd16(h + 6);\n  im.col_us = rd32(h + 8);\n  im.gap_us = rd32(h + 12);\n  im.dir = h[16];\n  im.hold_s = rd16(h + 18);\n  uint32_t lm = rd32(h + 20);\n  memcpy(&im.length_m, &lm, 4);\n  if (name) { memcpy(name, h + 24, 24); name[23] = 0; }\n  if (im.rows \u003c 1 || im.cols \u003c 1 || im.cols > 8192 || im.dir > POV_DIR_PAL) return false;\n  if (!(im.length_m >= 0.0f && im.length_m \u003c 100.0f)) im.length_m = 0.0f;\n  const uint64_t need = (uint64_t)im.rows * im.cols * 3u + HEADER_BYTES;\n  return need == fileBytes;\n}\n\n// Loads slot `slot` into a new buffer (PSRAM when present). *buf must be freed by\n// the caller. Returns false and prints nothing on failure; `why` gets a reason.\nstatic bool load(uint8_t slot, PovImage &im, char *name, uint8_t **buf, const char **why) {\n  *buf = nullptr;\n  File f = LittleFS.open(slotPath(slot), \"r\");\n  if (!f) { *why = \"open\"; return false; }\n  uint8_t h[HEADER_BYTES];\n  if (f.read(h, HEADER_BYTES) != HEADER_BYTES || !parseHeader(h, im, name, (uint32_t)f.size())) {\n    f.close(); *why = \"header\"; return false;\n  }\n  const size_t bytes = (size_t)im.rows * im.cols * 3u;\n  uint8_t *b = (uint8_t *)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);\n  if (!b && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > bytes + 48u * 1024u) b = (uint8_t *)malloc(bytes);\n  if (!b) { f.close(); *why = \"ram\"; return false; }\n  size_t got = 0;\n  while (got \u003c bytes) {\n    const size_t n = f.read(b + got, bytes - got);\n    if (n == 0) break;\n    got += n;\n  }\n  f.close();\n  if (got != bytes) { free(b); *why = \"short\"; return false; }\n  im.data = b;\n  *buf = b;\n  return true;\n}\n\nstatic bool remove(uint8_t slot) {\n  if (!s_ok || slot \u003c 1 || slot > SLOTS) return false;\n  const bool r = LittleFS.remove(slotPath(slot));\n  scan();\n  return r;\n}\n\nstatic void wipe() {\n  if (!s_ok) return;\n  for (uint8_t i = 1; i \u003c= SLOTS; ++i) if (LittleFS.exists(slotPath(i))) LittleFS.remove(slotPath(i));\n  LittleFS.remove(\"/img/tmp.pov\");\n  scan();\n}\n\n// Receives one file over Serial (protocol above). Prints go/./ok/err itself.\nstatic bool receive(Stream &io, uint8_t slot, uint32_t total, uint32_t crcWant) {\n  if (!s_ok) { io.println(\"err no filesystem\"); return false; }\n  if (slot \u003c 1 || slot > SLOTS) { io.println(\"err slot 1..32\"); return false; }\n  if (total \u003c HEADER_BYTES + 3 || total > MAX_FILE_BYTES) { io.println(\"err size\"); return false; }\n  if (LittleFS.exists(\"/img/tmp.pov\")) LittleFS.remove(\"/img/tmp.pov\");\n  File f = LittleFS.open(\"/img/tmp.pov\", \"w\");\n  if (!f) { io.println(\"err open\"); return false; }\n  io.println(\"go\");\n  static uint8_t chunk[CHUNK];\n  uint8_t header[HEADER_BYTES];\n  uint32_t got = 0, crc = 0xFFFFFFFFu;\n  const char *fail = nullptr;\n  while (got \u003c total) {\n    const uint32_t want = (total - got) \u003c CHUNK ? (total - got) : CHUNK;\n    const size_t n = io.readBytes(chunk, want);\n    if (n != want) { fail = \"timeout\"; break; }\n    if (got \u003c HEADER_BYTES) memcpy(header + got, chunk, (HEADER_BYTES - got) \u003c n ? (HEADER_BYTES - got) : n);\n    crc = crcUpdate(crc, chunk, n);\n    if (f.write(chunk, n) != n) { fail = \"write (filesystem full?)\"; break; }\n    got += n;\n    io.print(\".\\n\");\n  }\n  f.close();\n  PovImage im;\n  if (!fail && (crc ^ 0xFFFFFFFFu) != crcWant) fail = \"crc\";\n  if (!fail && !parseHeader(header, im, nullptr, total)) fail = \"header\";\n  if (fail) {\n    LittleFS.remove(\"/img/tmp.pov\");\n    io.print(\"err \"); io.println(fail);\n    return false;\n  }\n  if (LittleFS.exists(slotPath(slot))) LittleFS.remove(slotPath(slot));\n  if (!LittleFS.rename(\"/img/tmp.pov\", slotPath(slot))) { io.println(\"err rename\"); return false; }\n  scan();\n  io.print(\"ok \"); io.println(total);\n  return true;\n}\n\n// One line per slot: \"\u003cslot> \u003crows>x\u003ccols> \u003cbytes> \u003cname>\"\nstatic void list(Stream &io) {\n  if (!s_ok) { io.println(\"store: no filesystem (check the partition scheme)\"); return; }\n  io.printf(\"store: %u image%s, %lu of %lu kB used\\n\", (unsigned)s_count, s_count == 1 ? \"\" : \"s\",\n            (unsigned long)(LittleFS.usedBytes() / 1024), (unsigned long)(LittleFS.totalBytes() / 1024));\n  for (uint8_t k = 0; k \u003c s_count; ++k) {\n    const uint8_t slot = s_order[k];\n    File f = LittleFS.open(slotPath(slot), \"r\");\n    if (!f) continue;\n    uint8_t h[HEADER_BYTES];\n    PovImage im;\n    char name[24];\n    const bool okh = f.read(h, HEADER_BYTES) == HEADER_BYTES && parseHeader(h, im, name, (uint32_t)f.size());\n    if (okh) io.printf(\"  %2u  %ux%u  %lu bytes  %s\\n\", (unsigned)slot, im.rows, im.cols, (unsigned long)f.size(), name);\n    else io.printf(\"  %2u  (unreadable)\\n\", (unsigned)slot);\n    f.close();\n  }\n}\n\n}  // namespace povstore\n"}}</script>
+<script>
+// core.js - pure logic for POV Strip Studio (no DOM). Shared by the page and
+// the Node tests. Every timing formula here mirrors pov_strip.ino / led_out.h.
+"use strict";
+
+const POV = {};
+
+// ---- chip table ------------------------------------------------------------------
+// pwmHz: null = not verified; the page asks for it. Sources in the page footer.
+POV.CHIPS = {
+  APA102:     { label: "APA102",     clocked: true,  pwmHz: 19200, pwmSrc: "19.2 kHz measured (cpldcpu)", maxMHz: null, current: false, skew: true,  order: "BGR" },
+  SK9822:     { label: "SK9822",     clocked: true,  pwmHz: 4700,  pwmSrc: "4.7 kHz measured (cpldcpu); one datasheet lists 1.2 kHz", maxMHz: 30, current: true, skew: false, order: "BGR" },
+  HD107S:     { label: "HD107S",     clocked: true,  pwmHz: 26000, pwmSrc: "26 kHz (datasheet)", maxMHz: 30, current: true, skew: null, order: "BGR" },
+  WS2812B:    { label: "WS2812B",    clocked: false, bitNs: 1250, resetUs: 280, pwmHz: 430,  pwmSrc: "~430 Hz on older parts (cpldcpu)", order: "GRB" },
+  WS2812B_V5: { label: "WS2812B-V5", clocked: false, bitNs: 1225, resetUs: 280, pwmHz: 2000, pwmSrc: "2 kHz refresh (datasheet)", order: "GRB" },
+  SK6812:     { label: "SK6812",     clocked: false, bitNs: 1200, resetUs: 80,  pwmHz: 1100, pwmSrc: "1.1 kHz measured (cpldcpu)", order: "GRB" },
+  WS2811:     { label: "WS2811",     clocked: false, bitNs: 1250, resetUs: 280, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "RGB" },
+  WS2813:     { label: "WS2813",     clocked: false, bitNs: 1280, resetUs: 300, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "GRB" },
+  WS2815:     { label: "WS2815",     clocked: false, bitNs: 1890, resetUs: 300, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "GRB" },
+};
+
+POV.DIRS = { ltr: 0, rtl: 1, alt: 2, pal: 3 };
+POV.DIR_MACRO = ["POV_DIR_LTR", "POV_DIR_RTL", "POV_DIR_ALT", "POV_DIR_PAL"];
+POV.MODES = { full: 0, safe: 1, current: 2 };
+POV.MODE_MACRO = ["RENDER_FULL", "RENDER_PWM_SAFE", "RENDER_CURRENT"];
+
+const DEG = 180 / Math.PI;
+
+// ---- strip and wire timing (matches led_out.h) --------------------------------------
+POV.ledCount = (lengthM, density, nMax = 1e9) =>
+  Math.min(nMax, Math.max(1, Math.round(lengthM * density)));
+
+POV.frameBytes = (n) => {
+  const b = 4 + 4 * n + 4 + (Math.floor((n + 15) / 16) + 1);
+  return (b + 3) & ~3;
+};
+
+// ESP32 SPI from an 80 MHz source divides by an integer k; the driver picks the
+// closest. The firmware prints the real value ("info").
+POV.actualSpiHz = (mhz) => 80e6 / Math.max(1, Math.round(80 / Math.max(0.01, mhz)));
+
+POV.chipMinColUs = (chipKey, n, spiMHz, resetOverrideUs = 0) => {
+  const c = POV.CHIPS[chipKey];
+  if (c.clocked) {
+    const us = POV.frameBytes(n) * 8 * 1e6 / POV.actualSpiHz(spiMHz);
+    return Math.ceil(us) + 25;
+  }
+  const reset = resetOverrideUs > 0 ? resetOverrideUs : c.resetUs;
+  return Math.floor(n * 24 * c.bitNs / 1000) + reset + 25;
+};
+
+// Time from the first LED's update to the last LED's (APA102 updates as data passes).
+POV.skewUs = (chipKey, n, spiMHz) => {
+  const c = POV.CHIPS[chipKey];
+  if (!c.clocked || c.skew === false) return 0;
+  return (32 * n) * 1e6 / POV.actualSpiHz(spiMHz);
+};
+
+// ---- viewing geometry ----------------------------------------------------------------
+// s: settings {lengthM, density, distM, sweepDps, glanceDeg, colMode:'auto'|'manual',
+//              colUsManual, chip, spiMHz, gapMode:'auto'|'manual', gapMsManual, dir}
+POV.design = (s) => {
+  const n = POV.ledCount(s.lengthM, s.density);
+  const pitch = 1 / s.density;                       // m
+  const rowDeg = 2 * Math.atan(pitch / (2 * s.distM)) * DEG;
+  const stripDeg = 2 * Math.atan(s.lengthM / (2 * s.distM)) * DEG;
+  const sqUs = rowDeg / s.sweepDps * 1e6;             // square pixels
+  const wantUs = s.colMode === "manual" ? Math.max(1, s.colUsManual) : Math.round(sqUs);
+  const chipUs = POV.chipMinColUs(s.chip, n, s.spiMHz);
+  const colUs = Math.max(wantUs, chipUs);
+  const colDeg = s.sweepDps * colUs * 1e-6;           // angle one column covers
+  const glanceMs = s.glanceDeg / s.sweepDps * 1e3;
+  return { n, pitch, rowDeg, stripDeg, sqUs, wantUs, chipUs, colUs, colDeg, glanceMs,
+           chipLimited: wantUs < chipUs, maxColHz: 1e6 / chipUs };
+};
+
+// Columns for content of aspect `aspect` (width / height) drawn at `scale` of strip height.
+POV.columnsFor = (d, aspect, scale) =>
+  Math.max(1, Math.min(8192, Math.round(aspect * scale * d.n * d.rowDeg / d.colDeg)));
+
+// Pass length in columns for a direction mode, and the full cycle period.
+POV.cycle = (dir, cols, colUs, gapUs) => {
+  const T = cols * colUs;
+  if (dir === POV.DIRS.alt) return { passUs: T, periodUs: 2 * (T + gapUs) };
+  if (dir === POV.DIRS.pal) return { passUs: (2 * cols - 1) * colUs, periodUs: (2 * cols - 1) * colUs + gapUs };
+  return { passUs: T, periodUs: T + gapUs };
+};
+
+// Displayed column (0..cols-1) at time t (us) since cycle start, or -1 when dark.
+// Same order as runCycle(): LTR plays the right-most column first.
+POV.columnAt = (t, dir, cols, colUs, gapUs) => {
+  const T = cols * colUs;
+  if (dir === POV.DIRS.alt) {
+    const P = 2 * (T + gapUs);
+    let u = ((t % P) + P) % P;
+    if (u < T) return cols - 1 - Math.floor(u / colUs);
+    u -= T + gapUs;
+    if (u >= 0 && u < T) return Math.floor(u / colUs);
+    return -1;
+  }
+  if (dir === POV.DIRS.pal) {
+    const L = (2 * cols - 1) * colUs, P = L + gapUs;
+    const u = ((t % P) + P) % P;
+    if (u >= L) return -1;
+    const k = Math.floor(u / colUs);
+    return k < cols ? k : 2 * cols - 2 - k;
+  }
+  const P = T + gapUs;
+  const u = ((t % P) + P) % P;
+  if (u >= T) return -1;
+  const k = Math.floor(u / colUs);
+  return dir === POV.DIRS.rtl ? k : cols - 1 - k;
+};
+
+// Chance that one glance of duration D shows exactly one complete image and no
+// fragments, for a pass of length T repeating every T + G.
+POV.cleanChance = (D, T, G) => {
+  if (D <= T) return 0;
+  const p = G >= D - T ? (D - T) / (T + G) : (T + 2 * G - D) / (T + G);
+  return Math.max(0, Math.min(1, p));
+};
+POV.recommendedGapMs = (glanceMs, passMs) => Math.max(5, glanceMs - passMs);
+
+// ---- LED output model (matches ledout::setRender / build) ---------------------------
+// Returns per-channel {lin, duty}: lin = emitted light 0..1 averaged; duty = PWM on-fraction.
+POV.makeRender = (chipKey, mode, bri, gamma) => {
+  const c = POV.CHIPS[chipKey];
+  const current = !!c.current;
+  if (mode === POV.MODES.current && !current) mode = POV.MODES.safe;
+  const scale8 = current ? 255 : 255 * bri / 255;
+  const lut8 = new Uint8Array(256), lut5 = new Uint8Array(256);
+  for (let v = 0; v < 256; v++) {
+    const g = Math.pow(v / 255, gamma);
+    lut8[v] = Math.round(g * scale8);
+    lut5[v] = Math.round(g * 31 * bri / 255);
+  }
+  let gb = current ? Math.round(31 * bri / 255) : 31;
+  if (current && bri > 0 && gb === 0) gb = 1;
+  const on = 255;  // PWM-safe: full on or off, so no PWM gaps inside a column
+  return { mode, current, lut8, lut5, gb, on };
+};
+
+// out: Float32Array(6) = [duty r,g,b, level r,g,b]; light = duty * level.
+POV.pixelOut = (R, r, g, b, out) => {
+  let dr, dg, db, lv;
+  if (R.mode === POV.MODES.full) {
+    dr = R.lut8[r]; dg = R.lut8[g]; db = R.lut8[b]; lv = R.current ? R.gb / 31 : 1;
+  } else if (R.mode === POV.MODES.safe) {
+    dr = r >= 128 ? R.on : 0; dg = g >= 128 ? R.on : 0; db = b >= 128 ? R.on : 0;
+    lv = R.current ? R.gb / 31 : 1;
+  } else {
+    const m = Math.max(r, g, b), l = R.lut5[m];
+    if (!l) { dr = dg = db = 0; lv = 0; }
+    else { dr = 2 * r >= m ? 255 : 0; dg = 2 * g >= m ? 255 : 0; db = 2 * b >= m ? 255 : 0; lv = l / 31; }
+  }
+  out[0] = dr / 256; out[1] = dg / 256; out[2] = db / 256;
+  out[3] = out[4] = out[5] = lv;
+  return out;
+};
+
+// ---- image stats ---------------------------------------------------------------------
+// rgb: column-major Uint8Array, cols*rows*3. Returns peak/mean light fraction per column
+// (sum over LEDs and channels of duty*level / (3*rows)).
+POV.columnLoad = (rgb, rows, cols, R) => {
+  const o = new Float32Array(6);
+  let peak = 0, sum = 0;
+  for (let c = 0; c < cols; c++) {
+    let acc = 0;
+    const base = c * rows * 3;
+    for (let i = 0; i < rows; i++) {
+      const p = base + i * 3;
+      POV.pixelOut(R, rgb[p], rgb[p + 1], rgb[p + 2], o);
+      acc += o[0] * o[3] + o[1] * o[4] + o[2] * o[5];
+    }
+    acc /= 3 * rows;
+    if (acc > peak) peak = acc;
+    sum += acc;
+  }
+  return { peak, mean: cols ? sum / cols : 0 };
+};
+
+// ---- export: pov_image.h ---------------------------------------------------------------
+POV.cIdent = (s) => s.replace(/[^A-Za-z0-9_]/g, "_");
+POV.cComment = (s) => String(s).replace(/[\r\n]+/g, " ").replace(/\*\//g, "* /").slice(0, 120);
+
+// slides: [{label, rgb, rows, cols, holdS, gapUs?}]; meta: {colUs, gapUs, dir, lengthM, lines:[...]}
+POV.makeHeader = (slides, meta) => {
+  const out = [];
+  out.push("// pov_image.h - exported by POV Strip Studio" + (meta.date ? ", " + meta.date : ""));
+  for (const l of meta.lines || []) out.push("// " + POV.cComment(l));
+  out.push("// Column-major RGB888: column c starts at c*rows*3. Row 0 is the top of the image.");
+  out.push("#pragma once");
+  out.push('#include "pov_types.h"');
+  out.push("");
+  const hex = [];
+  for (let i = 0; i < 256; i++) hex.push("0x" + (i < 16 ? "0" : "") + i.toString(16));
+  slides.forEach((sl, k) => {
+    out.push(`// ${k + 1}: ${POV.cComment(sl.label)} (${sl.rows} x ${sl.cols})`);
+    out.push(`static const uint8_t pov_img_${k}[] = {`);
+    const d = sl.rgb, perLine = 24;
+    for (let i = 0; i < d.length; i += perLine) {
+      const end = Math.min(d.length, i + perLine);
+      let line = "  ";
+      for (let j = i; j < end; j++) line += hex[d[j]] + ",";
+      out.push(line);
+    }
+    out.push("};");
+    out.push("");
+  });
+  out.push("static const PovImage POV_IMAGES[] = {");
+  slides.forEach((sl, k) => {
+    const gap = sl.gapUs !== undefined ? sl.gapUs : meta.gapUs;
+    out.push(`  {pov_img_${k}, ${sl.rows}, ${sl.cols}, ${Math.round(meta.colUs)}u, ${Math.round(gap)}u, ` +
+             `${POV.DIR_MACRO[meta.dir]}, ${meta.lengthM.toFixed(2)}f, ${Math.max(0, Math.round(sl.holdS))}},`);
+  });
+  out.push("};");
+  out.push("");
+  return out.join("\n");
+};
+
+// ---- export: config.h from the template ------------------------------------------------
+POV.setDefine = (src, name, value) => {
+  const re = new RegExp("^(#define\\s+" + name + "\\s+)(\\S+)", "m");
+  if (!re.test(src)) throw new Error("config template has no #define " + name);
+  return src.replace(re, (m, a) => a + value);
+};
+
+POV.makeConfig = (tpl, c) => {
+  let s = tpl;
+  s = POV.setDefine(s, "POV_CHIP", "LED_" + c.chip);
+  s = POV.setDefine(s, "POV_LENGTH_M", c.lengthM.toFixed(2) + "f");
+  s = POV.setDefine(s, "POV_LEDS_PER_M", String(c.density));
+  s = POV.setDefine(s, "POV_NUM_LEDS_MAX", String(Math.max(720, c.n)));
+  s = POV.setDefine(s, "POV_DATA_IN_AT_BOTTOM", c.dataInAtBottom ? "1" : "0");
+  s = POV.setDefine(s, "POV_PIN_DATA", String(c.pinData));
+  s = POV.setDefine(s, "POV_PIN_CLOCK", String(c.pinClock));
+  s = POV.setDefine(s, "POV_SPI_MHZ", String(+c.spiMHz.toFixed(3)));
+  s = POV.setDefine(s, "POV_CLOCKED_ORDER", '"' + c.order + '"');
+  s = POV.setDefine(s, "POV_FASTLED_ORDER", c.order);
+  s = POV.setDefine(s, "POV_BRIGHTNESS", String(c.bri));
+  s = POV.setDefine(s, "POV_GAMMA", c.gamma.toFixed(2) + "f");
+  s = POV.setDefine(s, "POV_RENDER", POV.MODE_MACRO[c.mode]);
+  return s;
+};
+
+// ---- zip (stored, no compression) -------------------------------------------------------
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+POV.crc32 = (bytes) => {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+
+POV.zip = (files, when = new Date()) => {
+  const enc = new TextEncoder();
+  const dosTime = (when.getHours() << 11) | (when.getMinutes() << 5) | (when.getSeconds() >> 1);
+  const dosDate = ((when.getFullYear() - 1980) << 9) | ((when.getMonth() + 1) << 5) | when.getDate();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const data = typeof f.data === "string" ? enc.encode(f.data) : f.data;
+    const crc = POV.crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+    h.setUint16(8, 0, true); h.setUint16(10, dosTime, true); h.setUint16(12, dosDate, true);
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
+    h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true);
+    c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true); c.setUint16(12, dosTime, true);
+    c.setUint16(14, dosDate, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true);
+    c.setUint32(24, data.length, true); c.setUint16(28, name.length, true); c.setUint16(30, 0, true);
+    c.setUint16(32, 0, true); c.setUint16(34, 0, true); c.setUint16(36, 0, true);
+    c.setUint32(38, f.name.endsWith("/") ? 0x10 : 0, true); c.setUint32(42, offset, true);
+    central.push(new Uint8Array(c.buffer), name);
+    offset += 30 + name.length + data.length;
+  }
+  const cdSize = central.reduce((a, p) => a + p.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
+  const all = [...parts, ...central, new Uint8Array(e.buffer)];
+  const out = new Uint8Array(all.reduce((a, p) => a + p.length, 0));
+  let o = 0;
+  for (const p of all) { out.set(p, o); o += p.length; }
+  return out;
+};
+
+// ---- procedural test patterns (rgb column-major, rows x cols) ----------------------------
+// Drawn in square "design" space: u in [0,1) across, v in [0,1) down, aspect = cols/rows.
+POV.patterns = {
+  ring: { label: "Ring", aspect: 1, px(u, v) {
+    const x = u * 2 - 1, y = v * 2 - 1, r = Math.hypot(x, y);
+    if (Math.abs(r - 0.82) < 0.07) return [255, 255, 255];
+    if (Math.abs(x) < 0.035 && r < 0.75) return [255, 40, 40];
+    if (Math.abs(y) < 0.035 && r < 0.75) return [40, 120, 255];
+    return [0, 0, 0];
+  } },
+  heart: { label: "Heart", aspect: 1.0, px(u, v) {
+    const x = (u - 0.5) * 2.35, y = 1.29 - 2.35 * v;
+    const f = Math.pow(x * x + y * y - 1, 3) - x * x * y * y * y;
+    if (f > 0) return [0, 0, 0];
+    const t = Math.min(1, Math.max(0, v));
+    return [255, Math.round(30 + 120 * t), Math.round(140 - 120 * t)];
+  } },
+  chevrons: { label: "Rainbow chevrons", aspect: 0.5, px(u, v) {
+    const k = (v + Math.abs(u - 0.5) * 0.9) * 6;
+    if ((Math.floor(k) & 1)) return [0, 0, 0];
+    const h = (v * 300) % 360;
+    return POV.hsv(h, 1, 1);
+  } },
+  grid: { label: "Grid", aspect: 1, px(u, v) {
+    const gx = Math.abs(((u * 8) % 1) - 0.5) > 0.44, gy = Math.abs(((v * 8) % 1) - 0.5) > 0.44;
+    return gx || gy ? [200, 200, 200] : [0, 0, 0];
+  } },
+  bars: { label: "Color bars", aspect: 0.6, px(u, v) {
+    const cs = [[255,255,255],[255,255,0],[0,255,255],[0,255,0],[255,0,255],[255,0,0],[0,0,255]];
+    return cs[Math.min(6, Math.floor(v * 7))];
+  } },
+};
+
+POV.hsv = (h, s, v) => {
+  const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return [Math.round(f(5) * 255), Math.round(f(3) * 255), Math.round(f(1) * 255)];
+};
+
+// ---- resampling ------------------------------------------------------------------------
+// 1-D area weights: target cell k covers source [k*S/T, (k+1)*S/T). Overlaps are exact
+// integers in units of 1/T; weights are normalized to sum to 1 per target cell.
+// Same scheme as resampleImage() in the firmware.
+POV.areaSpans = (S, T) => {
+  const out = new Array(T);
+  for (let k = 0; k < T; k++) {
+    const a = k * S, b = (k + 1) * S;
+    const i0 = Math.floor(a / T), i1 = Math.min(S - 1, Math.floor((b - 1) / T));
+    const w = new Float32Array(i1 - i0 + 1);
+    for (let i = i0; i <= i1; i++) w[i - i0] = (Math.min(b, (i + 1) * T) - Math.max(a, i * T)) / S;
+    out[k] = { i0, w };
+  }
+  return out;
+};
+
+// Area-average resample in linear light (through the LED output gamma), so a thin
+// line that covers a fraction of a target pixel keeps its share of the emitted
+// energy instead of vanishing or snapping to full strength.
+// src: row-major, `stride` bytes per pixel (3 RGB or 4 RGBA), sw x sh.
+// Output: column-major RGB, dw x dh; the source fills columns [0, dw) and rows
+// [top, top + dh2), the rest stays black. nearest: sample centers (pixel art).
+POV.areaResample = (src, stride, sw, sh, dw, dh, top, dh2, gamma, nearest = false) => {
+  const out = new Uint8Array(dw * dh * 3);
+  if (sw < 1 || sh < 1 || dw < 1 || dh2 < 1) return out;
+  const lin = new Float32Array(256);
+  for (let v = 0; v < 256; v++) lin[v] = Math.pow(v / 255, gamma);
+  const enc = (x) => Math.round(255 * Math.pow(Math.min(1, Math.max(0, x)), 1 / gamma));
+  const xs = POV.areaSpans(sw, dw), ys = POV.areaSpans(sh, dh2);
+  for (let kc = 0; kc < dw; kc++) {
+    const X = xs[kc];
+    for (let kr = 0; kr < dh2; kr++) {
+      let r = 0, g = 0, b = 0;
+      if (nearest) {
+        const i = Math.min(sw - 1, Math.floor((kc + 0.5) * sw / dw));
+        const j = Math.min(sh - 1, Math.floor((kr + 0.5) * sh / dh2));
+        const p = (j * sw + i) * stride;
+        r = lin[src[p]]; g = lin[src[p + 1]]; b = lin[src[p + 2]];
+      } else {
+        const Y = ys[kr];
+        for (let jj = 0; jj < Y.w.length; jj++) {
+          const wy = Y.w[jj], rowBase = (Y.i0 + jj) * sw;
+          for (let ii = 0; ii < X.w.length; ii++) {
+            const w = wy * X.w[ii], p = (rowBase + X.i0 + ii) * stride;
+            r += w * lin[src[p]]; g += w * lin[src[p + 1]]; b += w * lin[src[p + 2]];
+          }
+        }
+      }
+      const o = (kc * dh + top + kr) * 3;
+      out[o] = enc(r); out[o + 1] = enc(g); out[o + 2] = enc(b);
+    }
+  }
+  return out;
+};
+
+// Rasterize a pattern into rows x cols (column-major) at `scale` of the height,
+// centered: drawn supersampled, then area-averaged in linear light.
+POV.rasterPattern = (key, rows, cols, scale, gamma = 2.4) => {
+  const pat = POV.patterns[key];
+  const dh2 = Math.max(1, Math.min(rows, Math.round(scale * rows))), top = Math.floor((rows - dh2) / 2);
+  const ss = Math.max(1, Math.min(6, Math.floor(Math.sqrt(1.5e6 / (cols * dh2)))));
+  const sw = cols * ss, sh = dh2 * ss;
+  const src = new Uint8Array(sw * sh * 3);
+  for (let j = 0; j < sh; j++) for (let i = 0; i < sw; i++) {
+    const p = pat.px((i + 0.5) / sw, (j + 0.5) / sh), o = (j * sw + i) * 3;
+    src[o] = p[0]; src[o + 1] = p[1]; src[o + 2] = p[2];
+  }
+  return POV.areaResample(src, 3, sw, sh, cols, rows, top, dh2, gamma);
+};
+
+// ---- perception model ------------------------------------------------------------------
+// Light from the strip lands on the retina at angle rAt(t) (deg, + = right of gaze).
+// Each step spreads that column's light over the pixels swept during the step, so
+// energy is conserved: a slow sweep piles light up, a fast one spreads it thin.
+// Exposure E makes a full-on pixel swept at the design speed read 1.0.
+//
+// P: { W, H, xMin, pxPerDeg, rows, cols, colUs, gapUs, dir, phaseUs, dt, E,
+//      rowLed: Int32Array(H)  image row per canvas row, -1 = no LED,
+//      wireIdx: Int32Array(H) position along the data line (for update skew),
+//      skewPerLedUs, duty: Float32Array(cols*rows*3), level: Float32Array(cols*rows),
+//      pwmUs (0 = PWM not modeled), ledPhase: Float32Array(rows) in us,
+//      rAt(tUs) -> deg }
+POV.simAccumulate = (P, acc, t0, t1) => {
+  const W = P.W, H = P.H, rows = P.rows;
+  const wts = new Float32Array(W + 2);
+  for (let t = t0; t < t1; t += P.dt) {
+    const dt = Math.min(P.dt, t1 - t);
+    const x0 = (P.rAt(t) - P.xMin) * P.pxPerDeg, x1 = (P.rAt(t + dt) - P.xMin) * P.pxPerDeg;
+    let a = Math.min(x0, x1), b = Math.max(x0, x1);
+    if (b < 0 || a >= W) continue;
+    if (b - a < 1e-4) b = a + 1e-4;
+    const span = b - a;
+    const ia = Math.max(0, Math.floor(a)), ib = Math.min(W - 1, Math.floor(b));
+    for (let px = ia; px <= ib; px++) {
+      const cov = Math.min(b, px + 1) - Math.max(a, px);
+      wts[px - ia] = cov > 0 ? cov / span : 0;
+    }
+    const tm = t + dt / 2 + P.phaseUs;
+    const shared = P.skewPerLedUs ? -2 : POV.columnAt(tm, P.dir, P.cols, P.colUs, P.gapUs);
+    if (shared === -1) continue;
+    const e0 = dt * P.E;
+    for (let y = 0; y < H; y++) {
+      const row = P.rowLed[y];
+      if (row < 0) continue;
+      let ts = tm, col = shared;
+      if (shared === -2) {
+        ts = tm - P.skewPerLedUs * (P.wireIdx[y] + 1);
+        col = POV.columnAt(ts, P.dir, P.cols, P.colUs, P.gapUs);
+        if (col < 0) continue;
+      }
+      const pi = col * rows + row;
+      const lv = P.level[pi];
+      if (!lv) continue;
+      let r = P.duty[pi * 3], g = P.duty[pi * 3 + 1], bl = P.duty[pi * 3 + 2];
+      if (P.pwmUs) {
+        const ph = (((ts + P.ledPhase[row]) % P.pwmUs) + P.pwmUs) % P.pwmUs / P.pwmUs;
+        r = ph < r ? 1 : 0; g = ph < g ? 1 : 0; bl = ph < bl ? 1 : 0;
+      }
+      if (!(r || g || bl)) continue;
+      const e = e0 * lv, base = y * W;
+      for (let px = ia; px <= ib; px++) {
+        const w = wts[px - ia] * e;
+        if (!w) continue;
+        const o = (base + px) * 3;
+        acc[o] += r * w; acc[o + 1] += g * w; acc[o + 2] += bl * w;
+      }
+    }
+  }
+};
+
+// Glance gaze path: A deg over durMs, rightward if dirSign > 0. Returns rAt(tUs) for the
+// strip (r = -gaze). profile 'real' = minimum-jerk (peak 1.875x mean), else constant.
+POV.glancePath = (A, durMs, dirSign, profile) => {
+  const D = durMs * 1000;
+  return (t) => {
+    const tau = Math.min(1, Math.max(0, t / D));
+    const s = profile === "real" ? tau * tau * tau * (10 - 15 * tau + 6 * tau * tau) : tau;
+    const gaze = (s - 0.5) * A * dirSign;
+    return -gaze;
+  };
+};
+POV.shakePath = (A, hz) => (t) => -(A / 2) * Math.sin(2 * Math.PI * hz * t * 1e-6);
+
+if (typeof module !== "undefined") module.exports = POV;
+
+</script>
+<script>
+(() => {
+"use strict";
+const $ = (id) => document.getElementById(id);
+const FW = JSON.parse($("fw").textContent);
+const KEY = "pov-strip-studio-v1";
+
+// ---------------------------------------------------------------- state
+const DEF = {
+  lengthM: 2, density: 60, chip: "APA102", spiMHz: 16, pwmHz: 19200,
+  distM: 5, sweepDps: 300, glanceDeg: 25, profile: "const", shakeDeg: 16, shakeHz: 2,
+  dir: "ltr", colMode: "auto", colUsManual: 800, gapMode: "auto", gapMsManual: 40,
+  mode: "full", bri: 255, gamma: 2.4, modelPwm: true,
+  board: "devkit", pinData: 4, pinClock: 18, order: "BGR", dataBottom: true,
+  slides: [
+    { kind: "pattern", pattern: "heart", scale: 0.8, hold: 8, include: true },
+    { kind: "text", text: "HI", layout: "stacked", font: "shoulders", fill: "vrainbow", color: "#ff3d8b", scale: 0.92, hold: 8, include: false },
+    { kind: "pattern", pattern: "ring", scale: 1, hold: 8, include: false },
+  ],
+  sel: 0,
+};
+const BOARDS = { xiao: [9, 7], devkit: [4, 18], s3devkit: [11, 12] };
+// App partition size and measured firmware size without images
+// (arduino-esp32 3.3.12, esptool elf2image): [clocked SPI path, single-wire FastLED path].
+// `small` is the Arduino IDE default partition, for boards where the project uses Huge APP.
+const BOARD_FLASH = {
+  xiao:     { app: 3342336, part: "XIAO default 8 MB layout", fw: [381968, 416448] },
+  devkit:   { app: 3145728, part: "Huge APP partition", fw: [321238, 350255], small: 1310720 },
+  s3devkit: { app: 3145728, part: "Huge APP partition", fw: [381968, 416448], small: 1310720 },
+  custom:   { app: 1310720, part: "default 4 MB layout", fw: [381968, 416448] },
+};
+function flashBudget() {
+  const b = BOARD_FLASH[st.board] || BOARD_FLASH.custom;
+  const fw = b.fw[POV.CHIPS[st.chip].clocked ? 0 : 1];
+  const margin = 16384;
+  return { part: b.part, free: b.app - fw - margin, smallFree: b.small ? b.small - fw - margin : 0 };
+}
+const FONTS = {
+  shoulders: { label: "Condensed", css: (px) => `900 ${px}px "Big Shoulders Display", "Arial Narrow", sans-serif` },
+  bungee: { label: "Sign", css: (px) => `400 ${px}px "Bungee", Impact, sans-serif` },
+  sans: { label: "Sans", css: (px) => `700 ${px}px "Instrument Sans", Arial, sans-serif` },
+  mono: { label: "Mono", css: (px) => `700 ${px}px "Spline Sans Mono", monospace` },
+};
+
+let st;
+try { st = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { st = null; }
+if (!st || typeof st !== "object") st = JSON.parse(JSON.stringify(DEF));
+for (const k of Object.keys(DEF)) if (st[k] === undefined) st[k] = JSON.parse(JSON.stringify(DEF[k]));
+st.slides = (st.slides || []).filter((s) => s && s.kind !== "image");
+if (!st.slides.length) st.slides = JSON.parse(JSON.stringify(DEF.slides));
+if (!POV.CHIPS[st.chip]) st.chip = DEF.chip;
+st.slides.forEach((sl, i) => { if (sl.include === undefined) sl.include = i === 0; });
+st.sel = Math.min(Math.max(0, st.sel | 0), st.slides.length - 1);
+const images = new WeakMap();   // slide -> ImageBitmap/HTMLImageElement (not saved)
+
+function save() {
+  try {
+    const copy = { ...st, slides: st.slides.filter((s) => s.kind !== "image") };
+    localStorage.setItem(KEY, JSON.stringify(copy));
+  } catch (e) { /* storage blocked: settings just won't persist */ }
+}
+
+// ---------------------------------------------------------------- derived
+let D = null;           // design numbers
+let rendered = [];      // per slide: {rgb, rows, cols, aspect, duty, level, label}
+let R = null;           // render LUTs
+
+function settings() {
+  return { lengthM: st.lengthM, density: Math.max(1, +st.density || 60), distM: st.distM, sweepDps: st.sweepDps,
+    glanceDeg: st.glanceDeg, colMode: st.colMode, colUsManual: Math.max(20, +st.colUsManual || 20),
+    chip: st.chip, spiMHz: Math.max(0.5, +st.spiMHz || 16) };
+}
+function dirCode() { return POV.DIRS[st.dir]; }
+function modeCode() { return POV.MODES[st.mode]; }
+function glanceMs() { return st.glanceDeg / st.sweepDps * 1000; }
+function passUs(cols) { return POV.cycle(dirCode(), cols, D.colUs, 0).passUs; }
+function gapUsFor(cols) {
+  if (st.gapMode === "manual") return Math.max(0, st.gapMsManual) * 1000;
+  return Math.round(POV.recommendedGapMs(glanceMs(), passUs(cols) / 1000) * 1000);
+}
+// gap for the selected slide (each slide gets its own in the header)
+function gapUs() { return gapUsFor(rendered[st.sel].cols); }
+// slides ticked for export, in playlist order
+function exported() { return rendered.filter((r, i) => st.slides[i] && st.slides[i].include); }
+
+// ---------------------------------------------------------------- slide rendering
+const scratch = document.createElement("canvas").getContext("2d");
+
+function textFill(g, sl, x0, y0, w, h) {
+  if (sl.fill === "solid") return sl.color;
+  const vert = sl.fill === "vrainbow";
+  const gr = vert ? g.createLinearGradient(0, y0, 0, y0 + h) : g.createLinearGradient(x0, 0, x0 + w, 0);
+  for (let i = 0; i <= 6; i++) gr.addColorStop(i / 6, `hsl(${(i * 50) % 360} 100% 55%)`);
+  return gr;
+}
+
+// Text drawn in square design space (k px per row), then squeezed to cols x rows.
+function renderText(sl, rows) {
+  const k = rows < 160 ? 4 : rows < 400 ? 2 : 1;
+  const Hd = rows * k;
+  const font = FONTS[sl.font] || FONTS.shoulders;
+  const text = (sl.text || " ").slice(0, 40);
+  let Wd, draw;
+  if (sl.layout === "stacked") {
+    const chars = Array.from(text);
+    const lineH = sl.scale * Hd / chars.length;
+    const fs = lineH * 0.9;
+    scratch.font = font.css(fs);
+    const capH = scratch.measureText("H").actualBoundingBoxAscent || fs * 0.7;
+    let maxW = 1;
+    for (const ch of chars) maxW = Math.max(maxW, scratch.measureText(ch).width);
+    Wd = Math.ceil(maxW + lineH * 0.16);
+    const top = (Hd - sl.scale * Hd) / 2;
+    draw = (g) => {
+      g.font = font.css(fs); g.textAlign = "center"; g.textBaseline = "alphabetic";
+      g.fillStyle = textFill(g, sl, 0, top, Wd, sl.scale * Hd);
+      chars.forEach((ch, i) => g.fillText(ch, Wd / 2, top + i * lineH + (lineH + capH) / 2));
+    };
+  } else {
+    scratch.font = font.css(100);
+    const m = scratch.measureText(text);
+    const asc = m.actualBoundingBoxAscent || 72, desc = m.actualBoundingBoxDescent || 0;
+    const fs = 100 * (sl.scale * Hd) / Math.max(1, asc + desc);
+    scratch.font = font.css(fs);
+    const m2 = scratch.measureText(text);
+    const left = m2.actualBoundingBoxLeft || 0, right = m2.actualBoundingBoxRight || m2.width;
+    const pad = fs * 0.06;
+    Wd = Math.ceil(left + right + 2 * pad);
+    const base = (Hd - sl.scale * Hd) / 2 + (m2.actualBoundingBoxAscent || asc * fs / 100);
+    draw = (g) => {
+      g.font = font.css(fs); g.textAlign = "left"; g.textBaseline = "alphabetic";
+      g.fillStyle = textFill(g, sl, pad, (Hd - sl.scale * Hd) / 2, left + right, sl.scale * Hd);
+      g.fillText(text, pad + left, base);
+    };
+  }
+  const src = document.createElement("canvas");
+  src.width = Math.max(1, Wd); src.height = Hd;
+  const sg = src.getContext("2d");
+  sg.fillStyle = "#000"; sg.fillRect(0, 0, src.width, Hd);
+  draw(sg);
+  return { src, aspect: src.width / Hd, scale: 1 };
+}
+
+// Source pixels of an image slide at a bounded resolution (row-major RGBA).
+function imagePixels(sl) {
+  const bmp = images.get(sl);
+  if (!bmp) return { data: new Uint8ClampedArray([0, 0, 0, 255]), w: 1, h: 1 };
+  const k = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+  const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const g = cv.getContext("2d", { willReadFrequently: true });
+  g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+  g.imageSmoothingEnabled = !sl.pixel; g.imageSmoothingQuality = "high";
+  g.drawImage(bmp, 0, 0, w, h);
+  const id = g.getImageData(0, 0, w, h);
+  if (sl.invert) for (let i = 0; i < id.data.length; i += 4) {
+    id.data[i] = 255 - id.data[i]; id.data[i + 1] = 255 - id.data[i + 1]; id.data[i + 2] = 255 - id.data[i + 2];
+  }
+  return { data: id.data, w, h };
+}
+
+// Every slide ends up as rows x cols RGB at the display grid, area-averaged in
+// linear light through the output gamma (the same resampling the firmware does
+// when the strip differs from the export), so thin strokes keep their energy.
+function renderSlide(sl) {
+  const rows = D.n, gamma = +st.gamma;
+  let rgb, cols, aspect, label;
+  if (sl.kind === "pattern") {
+    const key = sl.pattern in POV.patterns ? sl.pattern : "ring";
+    const pat = POV.patterns[key];
+    aspect = pat.aspect;
+    cols = POV.columnsFor(D, aspect, sl.scale);
+    rgb = POV.rasterPattern(key, rows, cols, sl.scale, gamma);
+    label = pat.label;
+  } else if (sl.kind === "text") {
+    const t = renderText(sl, rows);
+    aspect = t.aspect;
+    cols = POV.columnsFor(D, aspect, 1);
+    const g = t.src.getContext("2d", { willReadFrequently: true });
+    const id = g.getImageData(0, 0, t.src.width, t.src.height);
+    rgb = POV.areaResample(id.data, 4, t.src.width, t.src.height, cols, rows, 0, rows, gamma);
+    label = `Text "${(sl.text || "").slice(0, 16)}"`;
+  } else {
+    const px = imagePixels(sl);
+    aspect = px.w / px.h;
+    cols = POV.columnsFor(D, aspect, sl.scale);
+    const dh2 = Math.max(1, Math.min(rows, Math.round(sl.scale * rows))), top = Math.floor((rows - dh2) / 2);
+    rgb = POV.areaResample(px.data, 4, px.w, px.h, cols, rows, top, dh2, gamma, !!sl.pixel && px.w <= cols);
+    label = sl.name || "Image";
+  }
+  // LED output model per pixel
+  const o = new Float32Array(6);
+  const duty = new Float32Array(cols * rows * 3), level = new Float32Array(cols * rows);
+  for (let i = 0; i < cols * rows; i++) {
+    POV.pixelOut(R, rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2], o);
+    duty[i * 3] = o[0]; duty[i * 3 + 1] = o[1]; duty[i * 3 + 2] = o[2]; level[i] = o[3];
+  }
+  return { rgb, rows, cols, aspect, duty, level, label, hold: sl.hold };
+}
+
+// ---------------------------------------------------------------- viewing field
+const cv = $("field");
+const fctx = cv.getContext("2d");
+let view = null;         // geometry for the current canvas
+let acc = null;          // Float32Array accumulation
+let anim = null;         // running animation
+let shaking = false;
+
+function layoutField() {
+  const r = rendered[st.sel];
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cssW = Math.max(240, Math.round(cv.clientWidth || cv.parentElement.clientWidth - 20));
+  const imgDeg = r ? r.cols * D.colDeg : 10;
+  const xNeed = Math.max(st.glanceDeg, st.shakeDeg + imgDeg, imgDeg) / 2 * 1.12 + 1.5;
+  const yHalf = D.stripDeg / 2 * 1.06 + 0.8;
+  const maxH = Math.min(520, Math.max(220, window.innerHeight * 0.58));
+  let cssPerDeg = cssW / (2 * xNeed);
+  if (2 * yHalf * cssPerDeg > maxH) cssPerDeg = maxH / (2 * yHalf);
+  const cssH = Math.max(120, Math.round(2 * yHalf * cssPerDeg));
+  const W = Math.round(cssW * dpr), H = Math.round(cssH * dpr);
+  const pxPerDeg = cssPerDeg * dpr;
+  const xHalf = W / 2 / pxPerDeg;
+  cv.width = W; cv.height = H;
+  cv.style.height = cssH + "px";
+  // which LED (image row, top = 0) each canvas row sees; flat strip at distance d
+  const rows = D.n, rowLed = new Int32Array(H), wireIdx = new Int32Array(H);
+  for (let y = 0; y < H; y++) {
+    const phi = (yHalf - (y + 0.5) / pxPerDeg) * Math.PI / 180;
+    const h = st.distM * Math.tan(phi);
+    const iTop = Math.round((st.lengthM / 2 - h) / D.pitch - 0.5);
+    rowLed[y] = iTop >= 0 && iTop < rows ? iTop : -1;
+    wireIdx[y] = st.dataBottom ? rows - 1 - iTop : iTop;
+  }
+  view = { W, H, pxPerDeg, cssPerDeg, dpr, xHalf, yHalf, rowLed, wireIdx };
+  acc = new Float32Array(W * H * 3);
+}
+
+function hash01(i) { const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
+
+function simParams(rAt, phaseUs) {
+  const r = rendered[st.sel];
+  const pwmHz = +st.pwmHz || 0;
+  const pwmUs = pwmHz > 0 ? 1e6 / pwmHz : 0;
+  const model = st.modelPwm && pwmUs > D.colUs / 8;
+  const ledPhase = new Float32Array(r.rows);
+  if (model) for (let i = 0; i < r.rows; i++) ledPhase[i] = hash01(i) * pwmUs;
+  const skew = POV.skewUs(st.chip, D.n, st.spiMHz);
+  return {
+    W: view.W, H: view.H, xMin: -view.xHalf, pxPerDeg: view.pxPerDeg, rows: r.rows, cols: r.cols,
+    colUs: D.colUs, gapUs: gapUs(), dir: dirCode(), phaseUs,
+    dt: Math.min(D.colUs / 4, model ? pwmUs / 8 : Infinity),
+    E: st.sweepDps * 1e-6 * view.pxPerDeg, rowLed: view.rowLed, wireIdx: view.wireIdx,
+    skewPerLedUs: skew > D.colUs * 0.05 ? skew / D.n : 0,
+    duty: r.duty, level: r.level, pwmUs: model ? pwmUs : 0, ledPhase, rAt,
+  };
+}
+
+// Phase that centres a pass of the right orientation inside the glance.
+function centredPhase(durUs, dirSign) {
+  const r = rendered[st.sel];
+  const T = passUs(r.cols), G = gapUs();
+  let off = 0;
+  if (dirCode() === POV.DIRS.alt && dirSign < 0) off = T + G;
+  return -(durUs - T) / 2 + off;
+}
+
+let gridCol = "";
+function gridColor() {
+  if (!gridCol) gridCol = getComputedStyle(document.documentElement).getPropertyValue("--field-grid").trim() || "rgba(255,255,255,.07)";
+  return gridCol;
+}
+function drawField(extra) {
+  const { W, H, pxPerDeg, xHalf, yHalf } = view;
+  const img = fctx.createImageData(W, H);
+  const d = img.data;
+  for (let i = 0, j = 0; i < acc.length; i += 3, j += 4) {
+    d[j] = 255 * Math.pow(Math.min(1, acc[i]), 1 / 2.2);
+    d[j + 1] = 255 * Math.pow(Math.min(1, acc[i + 1]), 1 / 2.2);
+    d[j + 2] = 255 * Math.pow(Math.min(1, acc[i + 2]), 1 / 2.2);
+    d[j + 3] = 255;
+  }
+  fctx.putImageData(img, 0, 0);
+  // degree grid
+  const step = xHalf > 30 ? 10 : 5;
+  fctx.strokeStyle = gridColor();
+  fctx.lineWidth = view.dpr;
+  fctx.beginPath();
+  for (let a = -Math.floor(xHalf / step) * step; a <= xHalf; a += step) {
+    const x = Math.round(W / 2 + a * pxPerDeg) + 0.5; fctx.moveTo(x, 0); fctx.lineTo(x, H);
+  }
+  for (let a = -Math.floor(yHalf / step) * step; a <= yHalf; a += step) {
+    const y = Math.round(H / 2 - a * pxPerDeg) + 0.5; fctx.moveTo(0, y); fctx.lineTo(W, y);
+  }
+  fctx.stroke();
+  if (extra) extra(fctx);
+  $("fieldScale").textContent = `grid ${step}° · ${view.cssPerDeg.toFixed(1)} px per degree`;
+}
+
+// The strip seen at rest: its time-averaged light, as a thin line.
+function fixationLine(g, xDeg) {
+  const r = rendered[st.sel];
+  const T = passUs(r.cols), P = POV.cycle(dirCode(), r.cols, D.colUs, gapUs()).periodUs;
+  const frac = Math.min(1, (dirCode() === POV.DIRS.alt ? 2 * T : T) / P);
+  const x = Math.round(view.W / 2 + xDeg * view.pxPerDeg);
+  for (let y = 0; y < view.H; y++) {
+    const row = view.rowLed[y];
+    if (row < 0) continue;
+    let ar = 0, ag = 0, ab = 0;
+    for (let c = 0; c < r.cols; c++) {
+      const pi = c * r.rows + row, lv = r.level[pi];
+      ar += r.duty[pi * 3] * lv; ag += r.duty[pi * 3 + 1] * lv; ab += r.duty[pi * 3 + 2] * lv;
+    }
+    const k = frac / r.cols * 2.2;   // a little brighter than the true average so it reads
+    const f = (v) => Math.round(255 * Math.pow(Math.min(1, v * k + 0.04), 1 / 2.2));
+    g.fillStyle = `rgb(${f(ar)},${f(ag)},${f(ab)})`;
+    g.fillRect(x - view.dpr, y, 2 * view.dpr, 1);
+  }
+}
+
+function captionFor(kind, dirSign) {
+  const r = rendered[st.sel];
+  const where = `${st.distM.toFixed(1)} m`;
+  if (kind === "shake") return `<b>Shaking</b> ±${(st.shakeDeg / 2).toFixed(0)}° at ${st.shakeHz} Hz, viewer at ${where}`;
+  const arrow = dirSign > 0 ? "left to right" : "right to left";
+  return `<b>${st.glanceDeg}° glance, ${arrow}</b> at ${st.sweepDps}°/s, viewer at ${where} · slide ${st.sel + 1}: ${escapeHtml(r.label)}`;
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function stopAnim() { if (anim) cancelAnimationFrame(anim.raf); anim = null; }
+
+// Static frame: a complete centred glance, plus the strip at rest at both ends.
+function renderStill(dirSign = 1, phase = null) {
+  stopAnim(); setShake(false);
+  layoutField();
+  const dur = glanceMs() * 1000;
+  const rAt = POV.glancePath(st.glanceDeg, glanceMs(), dirSign, st.profile);
+  const P = simParams(rAt, phase === null ? centredPhase(dur, dirSign) : phase);
+  POV.simAccumulate(P, acc, 0, dur);
+  drawField((g) => { fixationLine(g, rAt(0)); fixationLine(g, rAt(dur)); });
+  $("fieldCap").innerHTML = captionFor("glance", dirSign);
+}
+
+function playGlance(dirSign) {
+  stopAnim(); setShake(false);
+  layoutField();
+  const dur = glanceMs() * 1000;
+  const rAt = POV.glancePath(st.glanceDeg, glanceMs(), dirSign, st.profile);
+  const cyc = POV.cycle(dirCode(), rendered[st.sel].cols, D.colUs, gapUs()).periodUs;
+  const P = simParams(rAt, Math.random() * cyc);   // a real glance lands at a random moment
+  const slow = +$("slowmo").value;
+  let t = 0, last = performance.now();
+  $("fieldCap").innerHTML = captionFor("glance", dirSign) + " · random timing";
+  anim = { raf: 0 };
+  const tick = (now) => {
+    const adv = Math.min(50, now - last) * 1000 * slow;
+    last = now;
+    const t1 = Math.min(dur, t + adv);
+    POV.simAccumulate(P, acc, t, t1);
+    t = t1;
+    drawField((g) => { fixationLine(g, rAt(0)); if (t >= dur) fixationLine(g, rAt(dur)); });
+    if (t < dur) anim.raf = requestAnimationFrame(tick); else anim = null;
+  };
+  anim.raf = requestAnimationFrame(tick);
+}
+
+function setShake(on) {
+  shaking = on;
+  $("bShake").setAttribute("aria-pressed", on ? "true" : "false");
+  $("bShake").textContent = on ? "Stop" : "Shake";
+}
+function playShake() {
+  stopAnim(); setShake(true);
+  layoutField();
+  const rAt = POV.shakePath(st.shakeDeg, st.shakeHz);
+  const P = simParams(rAt, 0);
+  const tau = 40000;   // ~40 ms visual persistence
+  let t = 0, last = performance.now();
+  $("fieldCap").innerHTML = captionFor("shake");
+  anim = { raf: 0 };
+  const tick = (now) => {
+    const adv = Math.min(50, now - last) * 1000 * (+$("slowmo").value);
+    last = now;
+    const k = Math.exp(-adv / tau);
+    for (let i = 0; i < acc.length; i++) acc[i] *= k;
+    POV.simAccumulate(P, acc, t, t + adv);
+    t += adv;
+    drawField();
+    if (shaking) anim.raf = requestAnimationFrame(tick);
+  };
+  anim.raf = requestAnimationFrame(tick);
+}
+
+// ---------------------------------------------------------------- numbers
+const fmt = {
+  us: (v) => v >= 10000 ? (v / 1000).toFixed(1) + " ms" : Math.round(v) + " µs",
+  hz: (v) => v >= 1000 ? (v / 1000).toFixed(2) + " kHz" : Math.round(v) + " Hz",
+  ms: (v) => (v >= 100 ? Math.round(v) : v.toFixed(1)) + " ms",
+  deg: (v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + "°",
+  pct: (v) => Math.round(v * 100) + "%",
+  bytes: (v) => v >= 1048576 ? (v / 1048576).toFixed(2) + " MB" : v >= 1024 ? (v / 1024).toFixed(1) + " kB" : v + " B",
+  a: (v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + " A",
+};
+
+function computeNumbers() {
+  const r = rendered[st.sel];
+  const chip = POV.CHIPS[st.chip];
+  const T = passUs(r.cols), G = gapUs();
+  const P = POV.cycle(dirCode(), r.cols, D.colUs, G).periodUs;
+  const Dg = glanceMs() * 1000;
+  const widthDeg = r.cols * D.colDeg;
+  const pwmHz = +st.pwmHz || 0;
+  const pwmCycles = pwmHz ? D.colUs * 1e-6 * pwmHz : null;
+  const skew = POV.skewUs(st.chip, D.n, st.spiMHz);
+  const ex = exported();
+  const loads = ex.concat([r]).map((x) => POV.columnLoad(x.rgb, x.rows, x.cols, R));
+  const peakLoad = Math.max(...loads.map((l) => l.peak));
+  const passFrac = Math.min(1, (dirCode() === POV.DIRS.alt ? 2 * T : T) / P);
+  const amps = (frac) => frac * 3 * D.n * 0.02;  // 20 mA per channel assumed
+  const dataBytes = ex.reduce((a, x) => a + x.rgb.length, 0);
+  return { r, chip, T, G, P, Dg, widthDeg, pwmHz, pwmCycles, skew, peakLoad, nExport: ex.length,
+    meanLoad: loads[loads.length - 1].mean * passFrac, amps, dataBytes, flash: flashBudget(),
+    clean: POV.cleanChance(Dg, T, G), colHz: 1e6 / D.colUs };
+}
+
+function pillsFor(N) {
+  const out = [];
+  if (D.chipLimited) out.push(["warn", "LIMIT", `${POV.CHIPS[st.chip].label} needs ${fmt.us(D.chipUs)} per column; square pixels want ${fmt.us(D.wantUs)}. Columns are ${(D.colUs / D.wantUs).toFixed(1)}x wider.`]);
+  else out.push(["ok", "CHIP", `Clocks a column in ${fmt.us(D.chipUs)} of the ${fmt.us(D.colUs)} slot (${fmt.pct(1 - D.chipUs / D.colUs)} spare)`]);
+  if (N.pwmCycles === null) out.push(["info", "PWM", "PWM frequency unknown: enter it to check mid-tones"]);
+  else if (N.pwmCycles < 1.5 && st.mode === "full") out.push(["bad", "PWM", `${N.pwmCycles.toFixed(2)} PWM cycles per column: mid-tones break up. Use PWM-safe${POV.CHIPS[st.chip].current ? " or Current" : ""}.`]);
+  else if (N.pwmCycles < 4 && st.mode === "full") out.push(["warn", "PWM", `${N.pwmCycles.toFixed(1)} PWM cycles per column: mid-tones look dashed`]);
+  else out.push(["ok", "PWM", N.pwmCycles === null ? "" : `${N.pwmCycles.toFixed(1)} PWM cycles per column`]);
+  if (N.colHz > 1980) out.push(["info", "EYE", `${fmt.hz(N.colHz)} columns: above the ~2 kHz mean limit, neighbors merge`]);
+  if (N.widthDeg > st.glanceDeg) out.push(["warn", "WIDE", `Image is ${fmt.deg(N.widthDeg)} wide, more than a ${st.glanceDeg}° glance`]);
+  else out.push(["ok", "FIT", `${fmt.pct(N.clean)} of ${st.glanceDeg}° glances catch one whole image`]);
+  if (POV.CHIPS[st.chip].clocked && POV.CHIPS[st.chip].maxMHz && st.spiMHz > POV.CHIPS[st.chip].maxMHz)
+    out.push(["bad", "SPI", `${st.spiMHz} MHz is over the ${POV.CHIPS[st.chip].maxMHz} MHz datasheet limit`]);
+  if (N.skew > D.colUs * 0.25) out.push(["info", "SKEW", `Far end updates ${fmt.us(N.skew)} late: image leans ${(N.skew / D.colUs).toFixed(1)} columns`]);
+  if (N.dataBytes > N.flash.free) out.push(["bad", "FLASH", `${fmt.bytes(N.dataBytes)} of images; ${fmt.bytes(N.flash.free)} fits beside the firmware in the ${N.flash.part}`]);
+  else if (N.flash.smallFree && N.dataBytes > N.flash.smallFree) out.push(["info", "FLASH", `${fmt.bytes(N.dataBytes)} of images: needs the Huge APP partition in Arduino IDE`]);
+  return out;
+}
+
+function renderNumbers() {
+  const N = computeNumbers();
+  const r = N.r;
+  $("pills").innerHTML = pillsFor(N).map(([c, t, s]) => `<li class="pill ${c}"><i>${t}</i>${escapeHtml(s)}</li>`).join("");
+  const tiles = [
+    ["LEDs", `${D.n}`, `${(D.pitch * 1000).toFixed(1)} mm pitch · strip spans ${fmt.deg(D.stripDeg)}`],
+    ["Column", `${fmt.us(D.colUs)}`, `${fmt.hz(N.colHz)}${D.chipLimited ? " · chip-limited" : " · square pixels"}`],
+    ["Chip limit", `${fmt.us(D.chipUs)}`, `${fmt.hz(D.maxColHz)} max at ${D.n} LEDs`],
+    ["Image", `${r.cols}<small> x ${r.rows}</small>`, `${fmt.deg(N.widthDeg)} wide, columns x rows`],
+    ["Pass", `${fmt.ms(N.T / 1000)}`, `gap ${fmt.ms(N.G / 1000)} · glance ${fmt.ms(N.Dg / 1000)}`],
+    ["Clean glance", `${fmt.pct(N.clean)}`, `one whole image, no fragments`],
+  ];
+  $("grid6").innerHTML = tiles.map(([k, v, s]) => `<div class="ro"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+  $("summary").textContent = `${POV.CHIPS[st.chip].label} · ${st.lengthM.toFixed(2)} m · ${D.n} LEDs · ${fmt.us(D.colUs)} columns`;
+  $("nLeds").textContent = `${D.n} LEDs`;
+
+  const chip = POV.CHIPS[st.chip];
+  const wire = chip.clocked
+    ? `${POV.frameBytes(D.n) * 8} bits at ~${(POV.actualSpiHz(st.spiMHz) / 1e6).toFixed(2)} MHz + 25 µs`
+    : `${D.n} x 24 bits x ${chip.bitNs} ns + ${chip.resetUs} µs latch + 25 µs`;
+  const peakA = N.amps(N.peakLoad), meanA = N.amps(N.meanLoad);
+  const rows = [
+    ["Strip"],
+    ["LEDs", `${D.n}`, `${st.lengthM.toFixed(2)} m x ${st.density}/m`],
+    ["Angle per LED", fmt.deg(D.rowDeg), `${(D.pitch * 1000).toFixed(1)} mm at ${st.distM} m`],
+    ["Strip height seen", fmt.deg(D.stripDeg), "The tallest an image can look"],
+    ["Timing"],
+    ["Square-pixel column", fmt.us(D.sqUs), `LED angle / eye speed (${st.sweepDps}°/s)`],
+    ["Chip minimum", fmt.us(D.chipUs), wire],
+    ["Column period used", `${fmt.us(D.colUs)} (${fmt.hz(N.colHz)})`, st.colMode === "manual" ? "Manual" : D.chipLimited ? "Chip-limited: fewer, wider columns" : "Square pixels"],
+    ["Columns, this slide", `${r.cols}`, `${fmt.deg(r.cols * D.colDeg)} wide at ${fmt.deg(D.colDeg)} per column`],
+    ["Pass", fmt.ms(N.T / 1000), st.dir === "pal" ? "Image plus mirror" : "One image"],
+    ["Dark gap", fmt.ms(N.G / 1000), st.gapMode === "auto" ? "Glance minus pass (min 5 ms), per slide" : "Manual, all slides"],
+    ["Cycle", fmt.ms(N.P / 1000), "Pass plus gap" + (st.dir === "alt" ? ", twice" : "")],
+    ["Glance"],
+    ["Glance duration", fmt.ms(N.Dg / 1000), `${st.glanceDeg}° at ${st.sweepDps}°/s`],
+    ["Clean glance chance", fmt.pct(N.clean), "(D - T) / (T + G) when G ≥ D - T"],
+    ["Flicker limit", "~1.98 kHz", "Mean saccadic flicker detection, Roberts & Wilkins 2013"],
+    ["Chip"],
+    ["PWM", N.pwmHz ? fmt.hz(N.pwmHz) : "unknown", chip.pwmSrc],
+    ["PWM cycles per column", N.pwmCycles === null ? "-" : N.pwmCycles.toFixed(2), "Below ~4, mid-tones show gaps inside a column"],
+    ["Update skew", chip.clocked ? (chip.skew === false ? "0 (latched)" : chip.skew === null ? "not stated" : fmt.us(N.skew)) : "0 (latched)", chip.clocked ? (chip.skew ? "APA102 updates each LED as data passes" : "SK9822 latches all LEDs together; HD107S datasheet is silent") : "Single-wire chips latch on reset"],
+    ["Power and memory"],
+    ["Peak column current", fmt.a(peakA), "Exported slides and this one; assumes 20 mA per channel at full"],
+    ["Average current", fmt.a(meanA), "This slide, including the dark gap"],
+    ["Image data", fmt.bytes(N.dataBytes), `${N.nExport} exported slide${N.nExport === 1 ? "" : "s"}, RGB888. Room for ${fmt.bytes(N.flash.free)} in the ${N.flash.part}` +
+      (N.flash.smallFree ? `; ${fmt.bytes(N.flash.smallFree)} with the Arduino IDE default` : "")],
+  ];
+  $("tbl").innerHTML = rows.map((x) => x.length === 1
+    ? `<tr class="grp"><th colspan="3">${x[0]}</th></tr>`
+    : `<tr><th>${x[0]}</th><td class="v">${x[1]}</td><td class="n">${escapeHtml(x[2])}</td></tr>`).join("");
+}
+
+// ---------------------------------------------------------------- slides UI
+function thumb(canvas, r) {
+  const g = canvas.getContext("2d");
+  const W = canvas.width = 70 * 2, H = canvas.height = 56 * 2;
+  g.fillStyle = "#030405"; g.fillRect(0, 0, W, H);
+  const pa = r.cols * D.colDeg / (r.rows * D.rowDeg);    // perceived aspect
+  let h = H - 8, w = h * pa;
+  if (w > W - 8) { w = W - 8; h = w / pa; }
+  const cvs = document.createElement("canvas");
+  cvs.width = r.cols; cvs.height = r.rows;
+  const cg = cvs.getContext("2d"), id = cg.createImageData(r.cols, r.rows);
+  for (let x = 0; x < r.cols; x++) for (let y = 0; y < r.rows; y++) {
+    const s = (x * r.rows + y) * 3, o = (y * r.cols + x) * 4;
+    id.data[o] = r.rgb[s]; id.data[o + 1] = r.rgb[s + 1]; id.data[o + 2] = r.rgb[s + 2]; id.data[o + 3] = 255;
+  }
+  cg.putImageData(id, 0, 0);
+  g.imageSmoothingEnabled = r.cols * r.rows < 40000 ? false : true;
+  g.drawImage(cvs, (W - w) / 2, (H - h) / 2, w, h);
+}
+
+function renderSlidesList() {
+  const box = $("slides");
+  box.innerHTML = "";
+  rendered.forEach((r, i) => {
+    const sl = st.slides[i];
+    const card = document.createElement("div");
+    card.className = "slide" + (sl.include ? "" : " out");
+    card.setAttribute("aria-current", i === st.sel ? "true" : "false");
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "slide-pick";
+    b.setAttribute("aria-label", `Slide ${i + 1}: ${r.label}`);
+    const c = document.createElement("canvas"); thumb(c, r);
+    const s = document.createElement("span"); s.textContent = `${i + 1}. ${r.label}`;
+    b.append(c, s);
+    b.addEventListener("click", () => { st.sel = i; save(); renderEditor(); renderSlidesList(); refresh(false); });
+    const lab = document.createElement("label");
+    lab.className = "slide-inc";
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.checked = !!sl.include; cb.id = `inc${i}`;
+    cb.setAttribute("aria-label", `Export slide ${i + 1}`);
+    cb.addEventListener("change", () => { sl.include = cb.checked; save(); renderSlidesList(); renderNumbers(); updatePreview(); });
+    lab.append(cb, document.createTextNode("Export"));
+    card.append(b, lab);
+    box.append(card);
+  });
+  const n = st.slides.filter((x) => x.include).length;
+  $("slideCount").textContent = `${n} of ${st.slides.length} ticked for export`;
+}
+
+function renderEditor() {
+  const ed = $("editor");
+  const sl = st.slides[st.sel];
+  if (!sl) { ed.innerHTML = ""; return; }
+  const parts = [];
+  if (sl.kind === "text") {
+    parts.push(`<div class="row"><label class="lab" for="eText">Text</label><input type="text" id="eText" maxlength="40" value="${escapeHtml(sl.text || "")}"></div>`);
+    parts.push(`<div class="row"><span class="lab">Layout</span><div class="seg" role="radiogroup" aria-label="Layout">
+      <label><input type="radio" name="eLayout" value="stacked"${sl.layout === "stacked" ? " checked" : ""}>Stacked letters</label>
+      <label><input type="radio" name="eLayout" value="line"${sl.layout !== "stacked" ? " checked" : ""}>One line</label></div>
+      <div class="hint">Stacked letters keep the image narrow, so a short glance catches it.</div></div>`);
+    parts.push(`<div class="row2"><div class="row"><label class="lab" for="eFont">Font</label><select id="eFont">${Object.entries(FONTS).map(([k, f]) => `<option value="${k}"${sl.font === k ? " selected" : ""}>${f.label}</option>`).join("")}</select></div>
+      <div class="row"><label class="lab" for="eFill">Color</label><div class="inline"><select id="eFill">
+      <option value="solid"${sl.fill === "solid" ? " selected" : ""}>Solid</option>
+      <option value="vrainbow"${sl.fill === "vrainbow" ? " selected" : ""}>Rainbow, top to bottom</option>
+      <option value="hrainbow"${sl.fill === "hrainbow" ? " selected" : ""}>Rainbow, across</option></select>
+      <input type="color" id="eColor" value="${escapeHtml(sl.color || "#ff3d8b")}" aria-label="Text color"></div></div></div>`);
+  } else if (sl.kind === "pattern") {
+    parts.push(`<div class="row"><label class="lab" for="ePat">Pattern</label><select id="ePat">${Object.entries(POV.patterns).map(([k, p]) => `<option value="${k}"${sl.pattern === k ? " selected" : ""}>${p.label}</option>`).join("")}</select></div>`);
+  } else {
+    parts.push(`<div class="hint">${escapeHtml(sl.name || "Image")}: black is off. Light backgrounds light the whole block; use Invert for dark art on white.</div>`);
+    parts.push(`<div class="row2"><label class="check" for="eInv"><input type="checkbox" id="eInv"${sl.invert ? " checked" : ""}>Invert</label>
+      <label class="check" for="ePix"><input type="checkbox" id="ePix"${sl.pixel ? " checked" : ""}>Pixel art (no smoothing)</label></div>`);
+  }
+  parts.push(`<div class="row2"><div class="row"><div class="lab"><label for="eScale">Height</label><output id="eScaleOut">${Math.round(sl.scale * 100)}%</output></div>
+    <input type="range" id="eScale" min="0.2" max="1" step="0.01" value="${sl.scale}"></div>
+    <div class="row"><label class="lab" for="eHold">On screen (s)</label><input type="number" id="eHold" min="0" max="3600" step="1" value="${sl.hold}"></div></div>`);
+  parts.push(`<div class="actions"><button class="btn" type="button" id="eLeft"${st.sel === 0 ? " disabled" : ""}>Move earlier</button>
+    <button class="btn danger" type="button" id="eDel"${st.slides.length < 2 ? " disabled" : ""}>Remove slide</button></div>`);
+  ed.innerHTML = parts.join("");
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+  on("eText", "input", (e) => { sl.text = e.target.value; changed(); });
+  ed.querySelectorAll('input[name="eLayout"]').forEach((el) => el.addEventListener("change", (e) => { sl.layout = e.target.value; changed(); }));
+  on("eFont", "change", (e) => { sl.font = e.target.value; changed(); });
+  on("eFill", "change", (e) => { sl.fill = e.target.value; changed(); });
+  on("eColor", "input", (e) => { sl.color = e.target.value; if (sl.fill === "solid") changed(); });
+  on("ePat", "change", (e) => { sl.pattern = e.target.value; changed(); });
+  on("eInv", "change", (e) => { sl.invert = e.target.checked; changed(); });
+  on("ePix", "change", (e) => { sl.pixel = e.target.checked; changed(); });
+  on("eScale", "input", (e) => { sl.scale = +e.target.value; $("eScaleOut").textContent = Math.round(sl.scale * 100) + "%"; changed(); });
+  on("eHold", "input", (e) => { sl.hold = Math.max(0, +e.target.value || 0); changed(false); });
+  on("eLeft", "click", () => { if (st.sel > 0) { const s = st.slides.splice(st.sel, 1)[0]; st.slides.splice(st.sel - 1, 0, s); st.sel--; changed(); renderEditor(); } });
+  on("eDel", "click", () => { if (st.slides.length > 1) { st.slides.splice(st.sel, 1); st.sel = Math.max(0, st.sel - 1); changed(); renderEditor(); } });
+}
+
+$("addText").addEventListener("click", () => {
+  st.slides.push({ kind: "text", text: "LOOK", layout: "stacked", font: "shoulders", fill: "solid", color: "#ffffff", scale: 0.92, hold: 8, include: true });
+  st.sel = st.slides.length - 1; changed(); renderEditor();
+});
+$("addPattern").addEventListener("click", () => {
+  st.slides.push({ kind: "pattern", pattern: "chevrons", scale: 1, hold: 8, include: true });
+  st.sel = st.slides.length - 1; changed(); renderEditor();
+});
+$("addImage").addEventListener("change", async (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    const bmp = await createImageBitmap(f);
+    const sl = { kind: "image", name: f.name.replace(/\.[^.]+$/, "").slice(0, 24), scale: 1, hold: 8, invert: false, pixel: false, include: true };
+    images.set(sl, bmp);
+    st.slides.push(sl); st.sel = st.slides.length - 1; changed(); renderEditor();
+  } catch (err) {
+    $("exportNote").className = "note err";
+    $("exportNote").textContent = "That file could not be read as an image. Try a PNG or JPEG.";
+  }
+});
+
+// ---------------------------------------------------------------- controls wiring
+const bind = (id, key, conv = Number, ev = "input") => {
+  const el = $(id);
+  el.value = st[key];
+  el.addEventListener(ev, () => { st[key] = conv(el.value); changed(); });
+};
+function fillChipSelect() {
+  const opts = (clk) => Object.entries(POV.CHIPS).filter(([, c]) => !!c.clocked === clk)
+    .map(([k, c]) => `<option value="${k}">${c.label}</option>`).join("");
+  $("chip").innerHTML = `<optgroup label="Clock + data">${opts(true)}</optgroup><optgroup label="Single wire">${opts(false)}</optgroup>`;
+}
+fillChipSelect();
+bind("len", "lengthM");
+bind("dens", "density", Number, "change");
+bind("spi", "spiMHz");
+bind("dist", "distM");
+bind("sweep", "sweepDps");
+bind("glance", "glanceDeg");
+bind("shakeA", "shakeDeg");
+bind("shakeHz", "shakeHz");
+bind("colMode", "colMode", String, "change");
+bind("colUs", "colUsManual");
+bind("gapMode", "gapMode", String, "change");
+bind("gapMs", "gapMsManual");
+bind("bri", "bri");
+bind("gamma", "gamma");
+bind("pinData", "pinData");
+bind("pinClock", "pinClock");
+bind("order", "order", String, "change");
+$("chip").value = st.chip;
+$("chip").addEventListener("change", () => {
+  st.chip = $("chip").value;
+  const c = POV.CHIPS[st.chip];
+  st.pwmHz = c.pwmHz || "";
+  st.order = c.order;
+  if (c.clocked && st.spiMHz > (c.maxMHz || 40)) st.spiMHz = c.maxMHz || 20;
+  $("pwm").value = st.pwmHz; $("order").value = st.order; $("spi").value = st.spiMHz;
+  changed();
+});
+$("pwm").value = st.pwmHz;
+$("pwm").addEventListener("input", () => { st.pwmHz = $("pwm").value === "" ? "" : +$("pwm").value; changed(); });
+$("modelPwm").checked = !!st.modelPwm;
+$("modelPwm").addEventListener("change", () => { st.modelPwm = $("modelPwm").checked; changed(false); });
+$("dataBottom").checked = !!st.dataBottom;
+$("dataBottom").addEventListener("change", () => { st.dataBottom = $("dataBottom").checked; changed(false); });
+$("board").value = st.board;
+$("board").addEventListener("change", () => {
+  st.board = $("board").value;
+  const p = BOARDS[st.board];
+  if (p) { st.pinData = p[0]; st.pinClock = p[1]; $("pinData").value = p[0]; $("pinClock").value = p[1]; }
+  changed(false);
+});
+for (const name of ["profile", "dir", "mode"]) {
+  document.querySelectorAll(`input[name="${name}"]`).forEach((el) => {
+    el.checked = el.value === st[name];
+    el.addEventListener("change", () => { if (el.checked) { st[name] = el.value; changed(); } });
+  });
+}
+$("bGlanceR").addEventListener("click", () => playGlance(1));
+$("bGlanceL").addEventListener("click", () => playGlance(-1));
+$("bShake").addEventListener("click", () => { if (shaking) { setShake(false); stopAnim(); renderStill(1); } else playShake(); });
+
+function syncOutputs() {
+  $("lenOut").textContent = `${st.lengthM.toFixed(2)} m`;
+  $("distOut").textContent = `${(+st.distM).toFixed(1)} m`;
+  $("sweepOut").textContent = `${st.sweepDps}°/s`;
+  $("glanceOut").textContent = `${st.glanceDeg}°`;
+  $("shakeAOut").textContent = `${st.shakeDeg}°`;
+  $("shakeHzOut").textContent = `${st.shakeHz} Hz`;
+  $("briOut").textContent = st.bri;
+  $("gammaOut").textContent = (+st.gamma).toFixed(1);
+  const c = POV.CHIPS[st.chip];
+  $("spiRow").hidden = !c.clocked;
+  $("pinClock").disabled = !c.clocked;
+  $("colUs").disabled = st.colMode !== "manual";
+  $("gapMs").disabled = st.gapMode !== "manual";
+  const curRadio = document.querySelector('input[name="mode"][value="current"]');
+  curRadio.disabled = !c.current;
+  if (!c.current && st.mode === "current") {
+    st.mode = "safe";
+    document.querySelector('input[name="mode"][value="safe"]').checked = true;
+  }
+  $("briHint").textContent = st.mode === "safe" && !c.current
+    ? "PWM-safe drives each channel fully on or off, so Brightness has no effect on this chip. Use Full color to dim."
+    : st.mode === "safe" ? "PWM-safe dims through the drive current, so no PWM gaps appear." : "";
+  $("chipHint").textContent = c.clocked
+    ? `PWM ${c.pwmSrc}. ${c.maxMHz ? `Datasheet clock limit ${c.maxMHz} MHz.` : "Datasheet gives no clock limit; raise it until the far end glitches."}`
+    : `${(1e6 / c.bitNs / 1000).toFixed(0)} kbit/s per FastLED timing, ${c.resetUs} µs latch. PWM ${c.pwmSrc}.`;
+}
+
+// ---------------------------------------------------------------- export
+function headerText() {
+  const date = new Date().toISOString().slice(0, 10);
+  const chip = POV.CHIPS[st.chip];
+  const lines = [
+    `Design: ${st.lengthM.toFixed(2)} m x ${st.density}/m = ${D.n} LEDs, ${chip.label}` + (chip.clocked ? ` @ ${st.spiMHz} MHz` : ""),
+    `Viewer ${st.distM} m, eye ${st.sweepDps} deg/s, glance ${st.glanceDeg} deg`,
+    `Column ${D.colUs} us (${Math.round(1e6 / D.colUs)} Hz), direction ${st.dir}, gap ${st.gapMode === "auto" ? "per slide" : st.gapMsManual + " ms"}`,
+  ];
+  return POV.makeHeader(exported().map((r) => ({ label: r.label, rgb: r.rgb, rows: r.rows, cols: r.cols, holdS: r.hold, gapUs: gapUsFor(r.cols) })),
+    { colUs: D.colUs, gapUs: 0, dir: dirCode(), lengthM: st.lengthM, lines, date });
+}
+function configText() {
+  return POV.makeConfig(FW.files["pov_strip/config.h"], {
+    chip: st.chip, lengthM: st.lengthM, density: st.density, n: D.n, dataInAtBottom: st.dataBottom,
+    pinData: +st.pinData, pinClock: +st.pinClock, spiMHz: +st.spiMHz, order: st.order,
+    bri: +st.bri, gamma: +st.gamma, mode: POV.MODES[st.mode] === 2 && !POV.CHIPS[st.chip].current ? 1 : POV.MODES[st.mode],
+  });
+}
+let previewTimer = 0;
+function updatePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    const ex = exported();
+    const total = ex.reduce((a, r) => a + r.rgb.length, 0);
+    const none = ex.length === 0;
+    $("bCopy").disabled = none; $("bZip").disabled = none;
+    const lines = none ? ["// nothing to export: tick at least one slide"] : [
+      `// pov_image.h  (${ex.length} slide${ex.length > 1 ? "s" : ""}, ${fmt.bytes(total)} of pixels)`,
+      "static const PovImage POV_IMAGES[] = {",
+      ...ex.map((r, i) => `  {pov_img_${i}, ${r.rows}, ${r.cols}, ${D.colUs}u, ${gapUsFor(r.cols)}u, ${POV.DIR_MACRO[dirCode()]}, ${st.lengthM.toFixed(2)}f, ${r.hold}},  // ${r.label}`),
+      "};",
+      "",
+      "// config.h (in the project zip)",
+      `#define POV_CHIP              LED_${st.chip}`,
+      `#define POV_LENGTH_M          ${st.lengthM.toFixed(2)}f`,
+      `#define POV_LEDS_PER_M        ${st.density}`,
+      `#define POV_PIN_DATA          ${st.pinData}`,
+      POV.CHIPS[st.chip].clocked ? `#define POV_PIN_CLOCK         ${st.pinClock}\n#define POV_SPI_MHZ           ${st.spiMHz}` : `#define POV_FASTLED_ORDER     ${st.order}`,
+      `#define POV_RENDER            ${POV.MODE_MACRO[POV.MODES[st.mode]]}`,
+    ];
+    $("preview").textContent = lines.join("\n");
+  }, 60);
+}
+$("bCopy").addEventListener("click", () => {
+  if (!exported().length) return;
+  const txt = headerText();
+  const note = $("exportNote");
+  const fb = $("fallback");
+  const done = () => { note.className = "note good"; note.textContent = `Copied pov_image.h (${fmt.bytes(txt.length)}). Paste it over pov_strip/pov_image.h.`; fb.hidden = true; };
+  const fail = () => {
+    fb.hidden = false; fb.value = txt; fb.focus(); fb.select();
+    note.className = "note"; note.textContent = "Copying was blocked here. The header is selected below: copy it by hand.";
+  };
+  try { navigator.clipboard.writeText(txt).then(done, fail); } catch (e) { fail(); }
+});
+let downloads = null;
+if (window.claude && typeof window.claude.use === "function") {
+  window.claude.use("downloads").then((d) => { downloads = d; $("bZip").hidden = !d; }).catch(() => {});
+} else if (location.protocol === "http:" || location.protocol === "https:") {
+  // plain browser (povstrip serve): an ordinary download works
+  downloads = { save: async ({ filename, data }) => {
+    const url = URL.createObjectURL(data);
+    const a = document.createElement("a"); a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return { status: "saved" };
+  } };
+  $("bZip").hidden = false;
+}
+
+// ---------------------------------------------------------------- device (povstrip serve)
+const dev = { api: false, connected: false, busy: false };
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || "device error");
+  return j;
+}
+function devLog(lines, replace = false) {
+  const el = $("devLog");
+  const txt = Array.isArray(lines) ? lines.join("\n") : String(lines);
+  el.textContent = replace ? txt : (el.textContent + "\n" + txt).split("\n").slice(-40).join("\n");
+  el.parentElement.scrollTop = el.parentElement.scrollHeight;
+}
+function devState(connected, busy, text) {
+  dev.connected = connected; dev.busy = busy;
+  const live = $("devLive");
+  live.className = "live" + (busy ? " busy" : connected ? " on" : "");
+  live.lastElementChild.textContent = text;
+  for (const id of ["devSend", "devApply", "devTest", "devNext", "devInfo", "devWipe"]) $(id).disabled = !connected || busy;
+  $("devConnect").textContent = connected ? "Disconnect" : "Connect";
+  $("devConnect").disabled = busy;
+}
+async function devPorts() {
+  const j = await api("/api/ports");
+  const sel = $("devPort"), prev = sel.value;
+  sel.innerHTML = j.ports.map((p) => `<option value="${escapeHtml(p.device)}">${escapeHtml(p.device)}${p.description ? "  " + escapeHtml(p.description) : ""}</option>`).join("") || "<option value=\"\">no serial ports found</option>";
+  if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+}
+// The strip knows what it is: take its chip, length and density into the page.
+function syncFromDevice(lines) {
+  const txt = lines.join("\n");
+  const chip = (txt.match(/^chip (\S+)/m) || [])[1];
+  const key = chip ? chip.replace(/-/g, "_") : "";
+  const changes = [];
+  if (key && POV.CHIPS[key] && key !== st.chip) {
+    st.chip = key; const c = POV.CHIPS[key];
+    st.pwmHz = c.pwmHz || ""; st.order = c.order;
+    $("chip").value = key; $("pwm").value = st.pwmHz; $("order").value = st.order;
+    changes.push(`chip ${c.label}`);
+  }
+  const strip = txt.match(/^strip ([\d.]+) m x (\d+)\/m/m);
+  if (strip) {
+    const len = +strip[1], dens = +strip[2];
+    if (Math.abs(len - st.lengthM) > 0.001) { st.lengthM = len; $("len").value = len; changes.push(`length ${len} m`); }
+    if (dens !== +st.density) { st.density = dens; $("dens").value = dens; changes.push(`${dens} LEDs/m`); }
+  }
+  if (changes.length) { devLog("page set to the strip's " + changes.join(", ")); changed(); }
+}
+function stripCommands() {
+  const c = POV.CHIPS[st.chip];
+  const cmds = [`len ${st.lengthM.toFixed(2)}`, `dens ${st.density}`, "col 0", "gap img", "dir img",
+    `bri ${st.bri}`, `gamma ${(+st.gamma).toFixed(2)}`, `mode ${st.mode === "current" && !c.current ? "safe" : st.mode}`, "auto on"];
+  if (c.clocked) cmds.push(`mhz ${st.spiMHz}`);
+  cmds.push("save");
+  return cmds;
+}
+async function devRun(label, fn) {
+  if (!dev.connected || dev.busy) return;
+  devState(true, true, label);
+  try { await fn(); devState(true, false, `connected, ${$("devPort").value}`); }
+  catch (e) { devLog("error: " + e.message); devState(dev.connected, false, dev.connected ? `connected, ${$("devPort").value}` : "not connected"); }
+}
+async function devInit() {
+  let ping;
+  try { ping = await api("/api/ping"); } catch (e) { return; }
+  dev.api = true;
+  $("devicePanel").hidden = false;
+  if (ping.fake) devLog("simulated strip (povstrip serve --fake): nothing real is connected", true);
+  await devPorts().catch((e) => devLog("ports: " + e.message));
+  try {
+    const s = await api("/api/status");
+    if (s.connected) { $("devPort").value = s.port; devState(true, false, `connected, ${s.port}`); }
+  } catch (e) { /* ignore */ }
+  $("devRefresh").addEventListener("click", () => devPorts().catch((e) => devLog("ports: " + e.message)));
+  $("devConnect").addEventListener("click", async () => {
+    if (dev.connected) {
+      try { await api("/api/disconnect", {}); } catch (e) { /* ignore */ }
+      devState(false, false, "not connected"); devLog("disconnected");
+      return;
+    }
+    const port = $("devPort").value;
+    if (!port) { devLog("pick a serial port first"); return; }
+    devState(false, true, "connecting (the board may reboot)");
+    try {
+      const j = await api("/api/connect", { port });
+      devState(true, false, `connected, ${j.port}`);
+      devLog(j.banner.length ? j.banner : ["connected to " + j.port], true);
+      const info = await api("/api/info"); devLog(info.lines);
+      syncFromDevice(info.lines);
+    } catch (e) { devState(false, false, "not connected"); devLog("connect failed: " + e.message); }
+  });
+  $("devInfo").addEventListener("click", () => devRun("reading info", async () => { const j = await api("/api/info"); devLog(j.lines, true); }));
+  $("devNext").addEventListener("click", () => devRun("next", async () => { const j = await api("/api/cmd", { text: "next" }); devLog(j.lines.slice(-4)); }));
+  $("devTest").addEventListener("click", () => devRun("test frame", async () => {
+    const on = $("devTest").dataset.on !== "1";
+    const j = await api("/api/cmd", { text: on ? "test" : "test off" });
+    $("devTest").dataset.on = on ? "1" : "0"; $("devTest").textContent = on ? "Test frame off" : "Test frame";
+    devLog(j.lines);
+  }));
+  $("devWipe").addEventListener("click", () => devRun("wiping", async () => { await api("/api/wipe", {}); devLog("strip storage emptied; it plays its built-in image now"); }));
+  async function sendSettings() {
+    for (const c of stripCommands()) {
+      try { await api("/api/cmd", { text: c }); }
+      catch (e) { if (!/mhz/.test(c)) throw e; }   // mhz is refused by single-wire strips
+    }
+  }
+  $("devApply").addEventListener("click", () => devRun("applying settings", async () => {
+    await sendSettings();
+    const info = await api("/api/info"); devLog(info.lines, true); devLog("settings saved on the strip");
+  }));
+  $("devSend").addEventListener("click", () => devRun("sending", async () => {
+    const ex = exported();
+    if (!ex.length) { devLog("tick at least one slide"); return; }
+    const prog = $("devProg"); prog.hidden = false; prog.firstElementChild.style.width = "0%";
+    await api("/api/wipe", {});
+    await sendSettings();
+    let k = 0;
+    for (const r of ex) {
+      k++;
+      devState(true, true, `sending ${k} of ${ex.length}: ${r.label}`);
+      let b = ""; const bytes = r.rgb;
+      for (let i = 0; i < bytes.length; i += 0x8000) b += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      const j = await api("/api/put", { slot: k, rgb_b64: btoa(b), header: { rows: r.rows, cols: r.cols, col_us: D.colUs, gap_us: gapUsFor(r.cols),
+        dir: dirCode(), hold_s: r.hold, length_m: st.lengthM, name: r.label.slice(0, 23) } });
+      devLog(`slot ${k}: ${r.label} ${r.rows}x${r.cols}, ${fmt.bytes(j.bytes)}`);
+      prog.firstElementChild.style.width = `${Math.round(100 * k / ex.length)}%`;
+    }
+    await api("/api/cmd", { text: "img 1" });
+    await api("/api/cmd", { text: "save" });
+    const info = await api("/api/ls"); devLog(info.lines);
+    setTimeout(() => { prog.hidden = true; }, 1500);
+  }));
+}
+devInit();
+$("bZip").addEventListener("click", async () => {
+  const note = $("exportNote");
+  if (!downloads || !exported().length) return;
+  const files = [];
+  for (const [path, text] of Object.entries(FW.files)) {
+    if (path === "pov_strip/config.h") files.push({ name: "pov-strip/" + path, data: configText() });
+    else if (path === "pov_strip/pov_image.h") continue;
+    else files.push({ name: "pov-strip/" + path, data: text });
+  }
+  files.push({ name: "pov-strip/pov_strip/pov_image.h", data: headerText() });
+  const bytes = POV.zip(files);
+  try {
+    await downloads.save({ filename: "pov-strip.zip", data: new Blob([bytes]) });
+    note.className = "note good"; note.textContent = `Saved pov-strip.zip (${fmt.bytes(bytes.length)}).`;
+  } catch (err) {
+    const code = err && err.code;
+    if (code === "declined") { note.className = "note"; note.textContent = "Save cancelled."; return; }
+    if (code === "rate_limited") { note.className = "note"; note.textContent = "A save prompt is already open."; return; }
+    note.className = "note err"; note.textContent = "Saving is not available in this view. Copy the header instead.";
+    $("bZip").hidden = true;
+  }
+});
+
+// ---------------------------------------------------------------- refresh
+let refreshQueued = false, rebuild = true;
+function changed(resim = true) {
+  save();
+  rebuild = true;
+  if (!refreshQueued) { refreshQueued = true; requestAnimationFrame(() => { refreshQueued = false; refresh(resim); }); }
+}
+function refresh(resim = true) {
+  syncOutputs();
+  D = POV.design(settings());
+  R = POV.makeRender(st.chip, modeCode(), +st.bri, +st.gamma);
+  if (rebuild || rendered.length !== st.slides.length) {
+    rendered = st.slides.map(renderSlide);
+    rebuild = false;
+  }
+  renderSlidesList();
+  renderNumbers();
+  updatePreview();
+  if (shaking) playShake();
+  else renderStill(1);
+}
+
+renderEditor();
+refresh();
+if (document.fonts && document.fonts.ready) {
+  const fams = ['900 40px "Big Shoulders Display"', '400 40px "Bungee"', '700 40px "Instrument Sans"', '700 40px "Spline Sans Mono"'];
+  Promise.all(fams.map((f) => document.fonts.load(f).catch(() => null))).then(() => { rebuild = true; refresh(); });
+}
+let rz = 0;
+window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (!shaking) renderStill(1); }, 120); });
+})();
+</script>
