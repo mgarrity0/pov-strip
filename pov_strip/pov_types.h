@@ -8,13 +8,13 @@
 #define LED_APA102      1   // 8-bit PWM ~19.2 kHz; 5-bit global = slow PWM (~440 Hz), so it stays at 31
 #define LED_SK9822      2   // 8-bit PWM (4.7 kHz measured, 1.2 kHz in one datasheet); 5-bit global = current
 #define LED_HD107S      3   // 8-bit PWM ~26 kHz; 5-bit global = current
-// Single data line, driven by FastLED
+// Single data line, driven by ESP32 RMT
 #define LED_WS2812B     10  // 800 kHz, PWM ~430 Hz on older parts
 #define LED_WS2812B_V5  11  // 800 kHz, PWM ("refresh") 2 kHz, reset > 280 us
 #define LED_SK6812      12  // 800 kHz, PWM ~1.1 kHz (RGB only)
 #define LED_WS2811      13  // 800 kHz mode
 #define LED_WS2813      14  // 800 kHz
-#define LED_WS2815      15  // FastLED drives it at ~530 kHz (1.89 us/bit)
+#define LED_WS2815      15  // ~525 kHz (1.9 us/bit, FastLED timing)
 
 #define LED_IS_CLOCKED(t)  ((t) < 10)
 

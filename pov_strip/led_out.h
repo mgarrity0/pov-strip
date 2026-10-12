@@ -2,7 +2,8 @@
 //
 // Clocked chips (APA102 / SK9822 / HD107S): ESP-IDF SPI master with DMA and two
 // frame buffers, so the next column is encoded while the current one is on the
-// wire. Single-wire chips (WS281x / SK6812): FastLED.
+// wire. Single-wire chips (WS281x / SK6812): ESP-IDF RMT with a bytes encoder,
+// also double-buffered. No LED library; the esp32 core is the only dependency.
 //
 // API (same for both paths):
 //   begin(nMax, n, hz)      allocate for nMax LEDs, start with n active
@@ -22,7 +23,9 @@
   #include "esp_heap_caps.h"
   #include "esp_idf_version.h"
 #else
-  #include <FastLED.h>
+  #include "driver/rmt_tx.h"
+  #include "driver/rmt_encoder.h"
+  #include "soc/soc_caps.h"
 #endif
 
 #if defined(CONFIG_IDF_TARGET_ESP32) && \
@@ -48,6 +51,14 @@ static uint8_t s_lut5[256];   // sRGB -> 0..31 current level (RENDER_CURRENT)
 static uint8_t s_gb = 31;     // 5-bit field for FULL / PWM_SAFE
 static uint8_t s_on = 255;    // "on" value for PWM_SAFE
 static uint8_t s_mode = RENDER_FULL;
+static uint8_t s_ord[3] = {2, 1, 0};  // wire byte k <- source channel s_ord[k]
+
+static void parseOrder(const char *o) {
+  for (int k = 0; k < 3; ++k) {
+    const char c = o[k];
+    s_ord[k] = (c == 'R' || c == 'r') ? 0 : (c == 'G' || c == 'g') ? 1 : 2;
+  }
+}
 
 static const char *chipName() {
   switch (POV_CHIP) {
@@ -100,20 +111,12 @@ static bool s_busy = false;
 static uint16_t s_nMax = 0, s_n = 0;
 static uint32_t s_bytes = 0;
 static int s_hz = 0;
-static uint8_t s_ord[3] = {2, 1, 0};  // wire byte k <- source channel s_ord[k]
 static uint32_t s_errs = 0;           // failed SPI queue calls (shown by "info")
 
 static inline uint32_t frameBytes(uint16_t n) {
   const uint32_t endBytes = (n + 15u) / 16u + 1u;
   const uint32_t b = 4u + 4u * n + 4u + endBytes;
   return (b + 3u) & ~3u;
-}
-
-static void parseOrder(const char *o) {
-  for (int k = 0; k < 3; ++k) {
-    const char c = o[k];
-    s_ord[k] = (c == 'R' || c == 'r') ? 0 : (c == 'G' || c == 'g') ? 1 : 2;
-  }
 }
 
 static bool addDevice(uint32_t hz) {
@@ -261,60 +264,178 @@ static void blankAll() {
 
 #else
 // =================================================================================
-// Single-wire: FastLED. Bit periods and resets follow FastLED 3.10 timing tables.
+// Single-wire: ESP-IDF RMT. A bytes encoder turns each payload byte into 8
+// symbols (one high/low pair per bit, MSB first); a copy encoder appends the
+// latch (reset) as one all-low symbol, so "done" means the chip has latched.
+// Two payload buffers in wire byte order; build() fills one while the other
+// is on the wire. The peripheral is refilled from an interrupt (no DMA on the
+// ESP32), which is fine without WiFi; the firmware never sends while it
+// writes flash.
+//
+// Bit timings in ns (high, low) for a 0 bit and a 1 bit, and the latch in us.
+// Both bits of a chip have the same period, POV_BIT_NS, which is what the
+// column budget uses (core.js / core.py carry the same numbers).
 // =================================================================================
 #if POV_CHIP == LED_WS2812B
-  #define POV_FL_CHIP WS2812B
-  #define POV_BIT_NS 1250
+  // WS2812B datasheet nominal: T0H 0.4, T0L 0.85, T1H 0.8, T1L 0.45 us, RES > 50 us
+  // (280 us covers the 2020+ parts). Same values Adafruit_NeoPixel uses on ESP32.
+  #define POV_T0H 400
+  #define POV_T0L 850
+  #define POV_T1H 800
+  #define POV_T1L 450
   #define POV_CHIP_RESET_US 280
 #elif POV_CHIP == LED_WS2812B_V5
-  #if defined(FASTLED_VERSION) && FASTLED_VERSION >= 3010000
-    #define POV_FL_CHIP WS2812BV5
-    #define POV_BIT_NS 1225
-  #else
-    #define POV_FL_CHIP WS2812B
-    #define POV_BIT_NS 1250
-  #endif
+  // V5 datasheet ranges: T0H 220-380, T1H 580-1000, T0L 580-1000, T1L 580-1000, RES > 280 us.
+  #define POV_T0H 300
+  #define POV_T0L 925
+  #define POV_T1H 600
+  #define POV_T1L 625
   #define POV_CHIP_RESET_US 280
 #elif POV_CHIP == LED_SK6812
-  #define POV_FL_CHIP SK6812
-  #define POV_BIT_NS 1200
+  // SK6812 datasheet nominal: T0H 0.3, T0L 0.9, T1H 0.6, T1L 0.6 us (+-150 ns), Treset > 80 us
+  #define POV_T0H 300
+  #define POV_T0L 900
+  #define POV_T1H 600
+  #define POV_T1L 600
   #define POV_CHIP_RESET_US 80
 #elif POV_CHIP == LED_WS2811
-  #define POV_FL_CHIP WS2811
-  #define POV_BIT_NS 1250
+  // WS2811 high-speed mode nominal: T0H 0.25, T0L 1.0, T1H 0.6, T1L 0.65 us, RES > 50 us
+  #define POV_T0H 250
+  #define POV_T0L 1000
+  #define POV_T1H 600
+  #define POV_T1L 650
   #define POV_CHIP_RESET_US 280
 #elif POV_CHIP == LED_WS2813
-  #define POV_FL_CHIP WS2813
-  #define POV_BIT_NS 1280
+  // FastLED 3.10 WS2813 timing (320 / 960, 640 / 640) rounded to 25 ns ticks
+  #define POV_T0H 325
+  #define POV_T0L 950
+  #define POV_T1H 650
+  #define POV_T1L 625
   #define POV_CHIP_RESET_US 300
 #elif POV_CHIP == LED_WS2815
-  #define POV_FL_CHIP WS2815
-  #define POV_BIT_NS 1890
+  // FastLED 3.10 WS2815 timing (250 / 1640, 1340 / 550) rounded to 25 ns ticks
+  #define POV_T0H 250
+  #define POV_T0L 1650
+  #define POV_T1H 1350
+  #define POV_T1L 550
   #define POV_CHIP_RESET_US 300
 #else
   #error "Unknown POV_CHIP"
 #endif
+#define POV_BIT_NS (POV_T0H + POV_T0L)
+static_assert(POV_T0H + POV_T0L == POV_T1H + POV_T1L, "0 and 1 bits must have the same period");
 
-static CRGB s_leds[POV_NUM_LEDS_MAX];
-static CLEDController *s_ctl = nullptr;
-static const uint8_t *s_stage[2] = {nullptr, nullptr};
-static const uint16_t *s_map = nullptr;
+#define POV_RMT_HZ 40000000u          // 25 ns ticks; 15-bit durations reach 819 us
+#define POV_RMT_BLOCKS 2              // RMT memory blocks (fewer refill interrupts)
+#define POV_NS_TICKS(ns) ((uint16_t)(((ns) * (POV_RMT_HZ / 1000000u) + 500u) / 1000u))
+
+static rmt_channel_handle_t s_chan = nullptr;
+static uint8_t *s_buf[2] = {nullptr, nullptr};   // payloads, 3 bytes per LED, wire order
+static bool s_busy = false;
 static uint16_t s_nMax = 0, s_n = 0;
+static uint32_t s_errs = 0;           // failed transmit calls / timeouts (shown by "info")
+
+// pixel bytes, then the latch symbol
+struct PixelEncoder {
+  rmt_encoder_t base;                 // must stay the first member (handle == &base)
+  rmt_encoder_handle_t bytes;
+  rmt_encoder_handle_t copy;
+  rmt_symbol_word_t latch;
+  int state;                          // 0: pixel bytes, 1: latch
+};
+static PixelEncoder s_enc;
 
 static uint32_t resetUs() { return POV_RESET_US > 0 ? (uint32_t)POV_RESET_US : (uint32_t)POV_CHIP_RESET_US; }
 
+static size_t IRAM_ATTR encodeCb(rmt_encoder_t *enc, rmt_channel_handle_t ch, const void *data, size_t size,
+                                 rmt_encode_state_t *retState) {
+  PixelEncoder *e = (PixelEncoder *)enc;
+  unsigned out = RMT_ENCODING_RESET;
+  rmt_encode_state_t st = RMT_ENCODING_RESET;
+  size_t n = 0;
+  if (e->state == 0) {
+    n += e->bytes->encode(e->bytes, ch, data, size, &st);
+    if (st & RMT_ENCODING_COMPLETE) e->state = 1;
+    if (st & RMT_ENCODING_MEM_FULL) out |= RMT_ENCODING_MEM_FULL;
+  }
+  if (e->state == 1 && !(out & RMT_ENCODING_MEM_FULL)) {
+    n += e->copy->encode(e->copy, ch, &e->latch, sizeof e->latch, &st);
+    if (st & RMT_ENCODING_COMPLETE) { e->state = 0; out |= RMT_ENCODING_COMPLETE; }
+    if (st & RMT_ENCODING_MEM_FULL) out |= RMT_ENCODING_MEM_FULL;
+  }
+  *retState = (rmt_encode_state_t)out;
+  return n;
+}
+
+static esp_err_t resetCb(rmt_encoder_t *enc) {
+  PixelEncoder *e = (PixelEncoder *)enc;
+  rmt_encoder_reset(e->bytes);
+  rmt_encoder_reset(e->copy);
+  e->state = 0;
+  return ESP_OK;
+}
+
+static esp_err_t delCb(rmt_encoder_t *enc) {
+  PixelEncoder *e = (PixelEncoder *)enc;
+  if (e->bytes) rmt_del_encoder(e->bytes);
+  if (e->copy) rmt_del_encoder(e->copy);
+  e->bytes = e->copy = nullptr;
+  return ESP_OK;
+}
+
+static bool makeEncoder() {
+  memset(&s_enc, 0, sizeof s_enc);
+  s_enc.base.encode = encodeCb;
+  s_enc.base.reset = resetCb;
+  s_enc.base.del = delCb;
+  rmt_bytes_encoder_config_t bc;
+  memset(&bc, 0, sizeof bc);
+  bc.bit0.level0 = 1; bc.bit0.duration0 = POV_NS_TICKS(POV_T0H);
+  bc.bit0.level1 = 0; bc.bit0.duration1 = POV_NS_TICKS(POV_T0L);
+  bc.bit1.level0 = 1; bc.bit1.duration0 = POV_NS_TICKS(POV_T1H);
+  bc.bit1.level1 = 0; bc.bit1.duration1 = POV_NS_TICKS(POV_T1L);
+  bc.flags.msb_first = 1;
+  if (rmt_new_bytes_encoder(&bc, &s_enc.bytes) != ESP_OK) return false;
+  rmt_copy_encoder_config_t cc;
+  memset(&cc, 0, sizeof cc);
+  if (rmt_new_copy_encoder(&cc, &s_enc.copy) != ESP_OK) return false;
+  // latch: all low, split over the two halves of one symbol (each <= 32767 ticks)
+  uint32_t half = resetUs() * (POV_RMT_HZ / 1000000u) / 2u;
+  if (half > 32767u) half = 32767u;
+  if (half < 1u) half = 1u;
+  s_enc.latch.level0 = 0; s_enc.latch.duration0 = (uint16_t)half;
+  s_enc.latch.level1 = 0; s_enc.latch.duration1 = (uint16_t)half;
+  return true;
+}
+
+static void waitDone() {
+  if (!s_busy || !s_chan) return;
+  if (rmt_tx_wait_all_done(s_chan, 200) != ESP_OK) s_errs++;   // 720 LEDs take ~22 ms
+  s_busy = false;
+}
+
 static bool begin(uint16_t nMax, uint16_t n, uint32_t /*hz*/) {
   s_nMax = nMax;
-  // Register the full buffer so FastLED sizes everything for nMax, then shrink.
-  s_ctl = &FastLED.addLeds<POV_FL_CHIP, POV_PIN_DATA, POV_FASTLED_ORDER>(s_leds, nMax);
-  FastLED.setDither(DISABLE_DITHER);
-  FastLED.setCorrection(UncorrectedColor);
-  FastLED.setTemperature(UncorrectedTemperature);
-  FastLED.setBrightness(255);         // brightness is in our LUT
-  FastLED.setMaxRefreshRate(0, false);  // we schedule columns ourselves
+  for (int i = 0; i < 2; ++i) {
+    s_buf[i] = (uint8_t *)malloc(3u * nMax);
+    if (!s_buf[i]) return false;
+    memset(s_buf[i], 0, 3u * nMax);
+  }
+  parseOrder(POV_SINGLE_ORDER);
+  rmt_tx_channel_config_t ch;
+  memset(&ch, 0, sizeof ch);
+  ch.gpio_num = (gpio_num_t)POV_PIN_DATA;
+  ch.clk_src = RMT_CLK_SRC_DEFAULT;
+  ch.resolution_hz = POV_RMT_HZ;
+  ch.mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL * POV_RMT_BLOCKS;
+  ch.trans_queue_depth = 1;
+  if (rmt_new_tx_channel(&ch, &s_chan) != ESP_OK) {
+    ch.mem_block_symbols = SOC_RMT_MEM_WORDS_PER_CHANNEL;   // fewer blocks free: take one
+    if (rmt_new_tx_channel(&ch, &s_chan) != ESP_OK) { s_chan = nullptr; return false; }
+  }
+  if (!makeEncoder()) return false;
+  if (rmt_enable(s_chan) != ESP_OK) return false;
   s_n = n > nMax ? nMax : n;
-  s_ctl->setLeds(s_leds, s_n);
   return true;
 }
 
@@ -323,56 +444,62 @@ __attribute__((unused)) static bool setClock(uint32_t) { return true; }
 __attribute__((unused)) static int actualHz() { return (int)(1e9 / POV_BIT_NS); }
 
 static void setCount(uint16_t n) {
+  waitDone();
   s_n = n > s_nMax ? s_nMax : n;
-  s_ctl->setLeds(s_leds, s_n);
 }
 
 static uint32_t wireBits() { return 24u * s_n; }
 
-// Data time + latch gap the chip needs between columns.
+// Data time + latch the chip needs between columns, plus a fixed allowance.
 static uint32_t minColUs() {
   return (uint32_t)((uint64_t)s_n * 24u * POV_BIT_NS / 1000u) + resetUs() + 25;
 }
 
-// FastLED has one pixel buffer, so build() only records the column; send()
-// encodes it right after the deadline. Costs a few tens of us of fixed latency.
-// FastLED 3.10 copies the pixels into its own buffer and returns from show()
-// while the RMT peripheral is still clocking them out; the next show() waits
-// for that to finish. The column period already covers data time plus latch.
-static void build(int i, const uint8_t *col, const uint16_t *map) {
-  s_stage[i] = col;
-  s_map = map;
-}
-
-static void send(int i) {
-  const uint8_t *col = s_stage[i];
-  const uint16_t n = s_n;
+// Fills payload i (wire byte order) for `count` LEDs; col == nullptr -> black.
+static void fill(int i, const uint8_t *col, const uint16_t *map, uint16_t count) {
+  uint8_t *p = s_buf[i];
   if (!col) {
-    for (uint16_t k = 0; k < n; ++k) s_leds[k] = CRGB(0, 0, 0);
-  } else if (s_mode == RENDER_FULL) {
-    for (uint16_t k = 0; k < n; ++k) {
-      const uint8_t *s = col + (uint32_t)s_map[k] * 3u;
-      s_leds[k] = CRGB(s_lut8[s[0]], s_lut8[s[1]], s_lut8[s[2]]);
+    memset(p, 0, 3u * count);
+    return;
+  }
+  const uint8_t o0 = s_ord[0], o1 = s_ord[1], o2 = s_ord[2];
+  if (s_mode == RENDER_FULL) {
+    for (uint16_t k = 0; k < count; ++k, p += 3) {
+      const uint8_t *s = col + (uint32_t)map[k] * 3u;
+      p[0] = s_lut8[s[o0]]; p[1] = s_lut8[s[o1]]; p[2] = s_lut8[s[o2]];
     }
   } else {  // RENDER_PWM_SAFE (CURRENT falls back here): full on or off, no PWM gaps
-    for (uint16_t k = 0; k < n; ++k) {
-      const uint8_t *s = col + (uint32_t)s_map[k] * 3u;
-      s_leds[k] = CRGB(s[0] >= 128 ? 255 : 0, s[1] >= 128 ? 255 : 0, s[2] >= 128 ? 255 : 0);
+    const uint8_t on = s_on;
+    for (uint16_t k = 0; k < count; ++k, p += 3) {
+      const uint8_t *s = col + (uint32_t)map[k] * 3u;
+      p[0] = s[o0] >= 128 ? on : 0; p[1] = s[o1] >= 128 ? on : 0; p[2] = s[o2] >= 128 ? on : 0;
     }
   }
-  FastLED.show();
 }
 
-static void waitDone() {}
+// col: this column's pixels (RGB888, image rows); map[i]: image row for LED i.
+static void build(int i, const uint8_t *col, const uint16_t *map) { fill(i, col, map, s_n); }
 
-static uint32_t errors() { return 0; }
+static void transmit(int i, uint16_t count) {
+  if (!s_chan || count == 0) return;
+  waitDone();
+  rmt_transmit_config_t tc;
+  memset(&tc, 0, sizeof tc);
+  tc.loop_count = 0;
+  tc.flags.eot_level = 0;
+  if (rmt_transmit(s_chan, &s_enc.base, s_buf[i], 3u * count, &tc) == ESP_OK) s_busy = true;
+  else s_errs++;
+}
+
+static void send(int i) { transmit(i, s_n); }
+
+static uint32_t errors() { return s_errs; }
 
 static void blankAll() {
-  const uint16_t keep = s_n;
-  setCount(s_nMax);
-  for (uint16_t k = 0; k < s_nMax; ++k) s_leds[k] = CRGB(0, 0, 0);
-  FastLED.show();  // the next show() waits for this transmission to finish
-  setCount(keep);
+  waitDone();
+  fill(0, nullptr, nullptr, s_nMax);
+  transmit(0, s_nMax);
+  waitDone();
 }
 #endif
 

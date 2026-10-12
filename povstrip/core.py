@@ -18,8 +18,8 @@ CHIPS = {
     "WS2812B_V5": dict(clocked=False, bitNs=1225, resetUs=280, order="GRB"),
     "SK6812": dict(clocked=False, bitNs=1200, resetUs=80, order="GRB"),
     "WS2811": dict(clocked=False, bitNs=1250, resetUs=280, order="RGB"),
-    "WS2813": dict(clocked=False, bitNs=1280, resetUs=300, order="GRB"),
-    "WS2815": dict(clocked=False, bitNs=1890, resetUs=300, order="GRB"),
+    "WS2813": dict(clocked=False, bitNs=1275, resetUs=300, order="GRB"),
+    "WS2815": dict(clocked=False, bitNs=1900, resetUs=300, order="GRB"),
 }
 
 

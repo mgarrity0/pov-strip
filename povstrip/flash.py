@@ -1,7 +1,7 @@
 """Build and upload the firmware with arduino-cli (the engine inside Arduino IDE 2).
 
-arduino-cli is found on PATH or at the usual Arduino IDE locations. Missing pieces
-(the esp32 core, FastLED) are installed on demand.
+arduino-cli is found on PATH or at the usual Arduino IDE locations. The esp32 core is
+installed on demand; the firmware needs no libraries.
 """
 from __future__ import annotations
 
@@ -62,24 +62,12 @@ def run(cmd: list[str], log=print) -> None:
         raise RuntimeError(f"{os.path.basename(cmd[0])} {cmd[1] if len(cmd) > 1 else ''} failed (exit {proc.returncode})")
 
 
-def ensure_core_and_libs(cli: list[str], single_wire: bool, log=print) -> None:
+def ensure_core(cli: list[str], log=print) -> None:
     cores = subprocess.run(cli + ["core", "list", "--format", "json"], capture_output=True, text=True)
     if "esp32:esp32" not in cores.stdout:
         log("esp32 core not installed: installing (a few minutes, ~1 GB)")
         run(cli + ["core", "update-index", "--additional-urls", ESP32_INDEX], log)
         run(cli + ["core", "install", "esp32:esp32", "--additional-urls", ESP32_INDEX], log)
-    if single_wire:
-        libs = subprocess.run(cli + ["lib", "list", "FastLED", "--format", "json"], capture_output=True, text=True)
-        if "FastLED" not in libs.stdout:
-            run(cli + ["lib", "install", "FastLED"], log)
-
-
-def chip_is_single_wire() -> bool:
-    cfg = (SKETCH / "config.h").read_text(encoding="utf-8")
-    for line in cfg.splitlines():
-        if line.startswith("#define POV_CHIP"):
-            return not any(k in line for k in ("APA102", "SK9822", "HD107S"))
-    return True
 
 
 def flash(board: str, serial_port: str | None, build_only: bool = False, huge: bool | None = None, log=print) -> None:
@@ -90,7 +78,7 @@ def flash(board: str, serial_port: str | None, build_only: bool = False, huge: b
     if huge is False:
         opts = ""
     log(f"arduino-cli: {cli[0]}")
-    ensure_core_and_libs(cli, chip_is_single_wire(), log)
+    ensure_core(cli, log)
     cmd = cli + ["compile", "--fqbn", fqbn]
     if opts:
         cmd += ["--board-options", opts]

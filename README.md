@@ -19,7 +19,7 @@ Firmware, any of these:
 - `povstrip flash --serial COM5` (or `/dev/cu.usbserial-XXXX`).
 - Arduino IDE: open `pov_strip/pov_strip.ino`, board "ESP32 Dev Module", upload. The Arduino IDE section below has the details.
 
-The first two use arduino-cli from PATH or the copy inside Arduino IDE 2, and install the esp32 core and FastLED themselves if missing.
+The first two use arduino-cli from PATH or the copy inside Arduino IDE 2, and install the esp32 core themselves if it is missing. The firmware needs no libraries.
 
 `pov_strip/config.h` holds the hardware facts: chip (`POV_CHIP`, WS2812B by default), data pin (GPIO4 = D4 on a DevKit), clock pin for clocked chips, LEDs per meter, length. Change those, reflash. Everything else changes live.
 
@@ -49,7 +49,7 @@ povstrip monitor                                  # raw serial console
 |---|---|
 | `pov_strip/pov_strip.ino` | Column scheduler, playlist, serial console, settings in NVS, resampler |
 | `pov_strip/pov_store.h` | Images on LittleFS: `/img/01.pov` .. `/img/32.pov`, the `put` upload protocol |
-| `pov_strip/led_out.h` | Clocked chips over ESP-IDF SPI + DMA (double-buffered); single-wire chips via FastLED |
+| `pov_strip/led_out.h` | Clocked chips over ESP-IDF SPI + DMA; single-wire chips over ESP-IDF RMT (bytes encoder). Both double-buffered |
 | `pov_strip/config.h` | Chip, length, LEDs/m, pins, render defaults |
 | `pov_strip/pov_types.h` | Chip, direction and render constants, `PovImage` record |
 | `pov_strip/pov_image.h` | Built-in demo (one heart) played when nothing has been uploaded |
@@ -81,6 +81,8 @@ Time to clock one column out:
 | WS2812B | 30 us per LED + 280 us latch | 3.9 ms (256 columns/s) | 9.3 ms |
 
 When the chip is slower than the design, the firmware plays fewer, longer columns so the image keeps its width (lower horizontal resolution). On 120 WS2812B LEDs the heart is 16 columns wide. Single-wire chips suit short, low-density strips; past about 1 m x 60/m use a clocked chip.
+
+Single-wire bit timings (high/low ns for a 0 bit, for a 1 bit; latch): WS2812B 400/850, 800/450, 280 us (datasheet nominal, the values Adafruit_NeoPixel uses on ESP32); WS2812B-V5 300/925, 600/625, 280 us (inside the V5 datasheet ranges); SK6812 300/900, 600/600, 80 us (datasheet nominal); WS2811 250/1000, 600/650, 280 us (datasheet high-speed mode); WS2813 325/950, 650/625, 300 us and WS2815 250/1650, 1350/550, 300 us (FastLED 3.10 timings rounded to 25 ns). The strip latches as part of each column's transmission, so a late column cannot run into the previous one. Change them in `led_out.h` if a strip disagrees; WS2812B is the only chip run on hardware so far.
 
 Resampling: images uploaded from the Studio are already on the strip's grid and play pixel for pixel. If the strip, density or column period differ from what an image was made for (a `len` change, a slower chip), the firmware resamples it once into RAM: each displayed pixel is the area average of the stored pixels it covers, in linear light through the output gamma, so a thin line keeps its share of the light instead of vanishing. `info` says when this is happening.
 
@@ -118,13 +120,14 @@ Viewers resolve flicker during saccades up to a mean of ~2 kHz (Roberts & Wilkin
 
 1. File > Preferences > Additional boards manager URLs: `https://espressif.github.io/arduino-esp32/package_esp32_index.json`
 2. Tools > Board > Boards Manager: install **esp32** by Espressif Systems, version 3.x.
-3. Tools > Manage Libraries: install **FastLED** 3.10.7 or newer (single-wire chips only).
-4. Open `pov_strip/pov_strip.ino`. Tools > Board > esp32 > **ESP32 Dev Module**. Upload.
-5. Tools > Serial Monitor: 115200 baud, line ending **New Line**. Type `help`.
+3. Open `pov_strip/pov_strip.ino`. Tools > Board > esp32 > **ESP32 Dev Module**, Partition Scheme **Huge APP**. Upload. No libraries to install.
+4. Tools > Serial Monitor: 115200 baud, line ending **New Line**. Type `help`.
 
 Images stored on the strip use the partition's SPIFFS area (1.5 MB with the default scheme, 1 MB with Huge APP), so the partition scheme no longer matters for image count unless you compile images in.
 
-Built with arduino-cli 1.5.1 (the build engine inside Arduino IDE 2), esp32 3.3.12 and FastLED 3.10.7 for ESP32 Dev Module: 399,327 bytes, no warnings from the sketch at `-Wall -Wextra`. Also linked for ESP32-S3. The firmware's resampler, the Studio's and the Python tool's were run on the same inputs (`tools/check_resampler`). The serial protocol was exercised against the simulated strip (`test/`). Not yet run on real hardware.
+Built with arduino-cli 1.5.1 (the build engine inside Arduino IDE 2) and esp32 3.3.12 for ESP32 Dev Module, Huge APP: 359,408 bytes (WS2812B) / 370,848 bytes (APA102), no warnings from the sketch at `-Wall -Wextra`. The firmware's resampler, the Studio's and the Python tool's were run on the same inputs (`tools/check_resampler`). The serial protocol was exercised against the simulated strip (`test/`). Hardware so far: an ESP32 DevKit (CH340) driving WS2812B.
+
+Why not FastLED: its ESP32 RMT driver (3.10 and later) fixes the strip length at `addLeds()`, and this firmware changes the active LED count at runtime (`len`, `dens`), so every column failed an assert once the two differed. Driving the RMT peripheral directly removes the dependency and the version drift.
 
 ## PlatformIO
 

@@ -14,8 +14,8 @@ POV.CHIPS = {
   WS2812B_V5: { label: "WS2812B-V5", clocked: false, bitNs: 1225, resetUs: 280, pwmHz: 2000, pwmSrc: "2 kHz refresh (datasheet)", order: "GRB" },
   SK6812:     { label: "SK6812",     clocked: false, bitNs: 1200, resetUs: 80,  pwmHz: 1100, pwmSrc: "1.1 kHz measured (cpldcpu)", order: "GRB" },
   WS2811:     { label: "WS2811",     clocked: false, bitNs: 1250, resetUs: 280, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "RGB" },
-  WS2813:     { label: "WS2813",     clocked: false, bitNs: 1280, resetUs: 300, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "GRB" },
-  WS2815:     { label: "WS2815",     clocked: false, bitNs: 1890, resetUs: 300, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "GRB" },
+  WS2813:     { label: "WS2813",     clocked: false, bitNs: 1275, resetUs: 300, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "GRB" },
+  WS2815:     { label: "WS2815",     clocked: false, bitNs: 1900, resetUs: 300, pwmHz: null, pwmSrc: "not verified: enter from your datasheet", order: "GRB" },
 };
 
 POV.DIRS = { ltr: 0, rtl: 1, alt: 2, pal: 3 };
@@ -235,7 +235,7 @@ POV.makeConfig = (tpl, c) => {
   s = POV.setDefine(s, "POV_PIN_CLOCK", String(c.pinClock));
   s = POV.setDefine(s, "POV_SPI_MHZ", String(+c.spiMHz.toFixed(3)));
   s = POV.setDefine(s, "POV_CLOCKED_ORDER", '"' + c.order + '"');
-  s = POV.setDefine(s, "POV_FASTLED_ORDER", c.order);
+  s = POV.setDefine(s, "POV_SINGLE_ORDER", '"' + c.order + '"');
   s = POV.setDefine(s, "POV_BRIGHTNESS", String(c.bri));
   s = POV.setDefine(s, "POV_GAMMA", c.gamma.toFixed(2) + "f");
   s = POV.setDefine(s, "POV_RENDER", POV.MODE_MACRO[c.mode]);

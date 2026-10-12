@@ -1,6 +1,6 @@
 // config.h - hardware and default settings.
 // Everything marked (runtime) can also be changed over serial and saved to flash.
-// Names carry a POV_ prefix so they cannot collide with FastLED or the core.
+// Names carry a POV_ prefix so they cannot collide with the esp32 core.
 #pragma once
 #include "pov_types.h"
 
@@ -27,8 +27,8 @@
 #define POV_CLOCKED_ORDER     "BGR"  // byte order on the wire after the 0xE0 header
 
 // ---- Single-wire chips (WS281x / SK6812) -----------------------------------------
-#define POV_FASTLED_ORDER     GRB    // FastLED EOrder token
-#define POV_RESET_US          0      // 0 = chip default (80 us SK6812, 280-300 us others)
+#define POV_SINGLE_ORDER      "GRB"  // byte order on the wire (WS2812B/SK6812 GRB, most WS2811 RGB)
+#define POV_RESET_US          0      // latch (reset) time; 0 = chip default (80 us SK6812, 280-300 us others)
 
 // ---- Rendering ------------------------------------------------------------------
 #define POV_BRIGHTNESS        255    // (runtime "bri")

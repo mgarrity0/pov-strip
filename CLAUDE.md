@@ -27,7 +27,9 @@ implementations.
   and `povstrip/fakedev.py` implement both ends.
 - PWM-safe mode drives channels fully on or off; brightness only applies through the 5-bit
   current field on SK9822/HD107S. `led_out.h setRender` and `core.js makeRender` match.
-- config.h macros are prefixed `POV_` (FastLED defines BRIGHTNESS, PIN_DATA, GAMMA).
+- config.h macros are prefixed `POV_` so they cannot collide with the esp32 core.
+- The firmware depends on the esp32 Arduino core only (ESP-IDF SPI master and RMT drivers); no
+  LED library. FastLED was dropped because its RMT driver fixes the LED count at `addLeds()`.
 
 ## Building and testing
 
@@ -38,7 +40,8 @@ implementations.
   `studio/pov-strip-studio.html` by hand.
 - Demo image for the shipped config: `node tools/gen_default.js`.
 - Tests: `node test/core_test.js`, `python3 test/test_protocol.py`, `povstrip serve --fake`.
-- Not yet verified on real hardware as of 2026-10-11.
+- Hardware so far (2026-10-11): ESP32 DevKit (CH340) with WS2812B. Clocked chips and the other
+  single-wire chips are untested on hardware.
 
 ## Style
 
