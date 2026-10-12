@@ -48,7 +48,8 @@ class Bridge:
     def connect(self, port: str, baud: int = 115200) -> list[str]:
         with self.lock:
             self.disconnect_locked()
-            dev = Device(port, baud, log=self._log)
+            transport = self.fake.endpoint() if (self.fake and port == self.fake.path) else None
+            dev = Device(port, baud, log=self._log, transport=transport)
             try:
                 banner = dev.connect()
             except Exception:

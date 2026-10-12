@@ -21,24 +21,33 @@ BOARDS = {
 }
 
 
-def find_cli() -> str:
+def find_cli() -> list[str]:
+    """arduino-cli on PATH, or the copy inside Arduino IDE 2 (with the IDE's config, so
+    the cores and libraries installed from the IDE are the ones used)."""
     for name in ("arduino-cli", "arduino-cli.exe"):
         p = shutil.which(name)
         if p:
-            return p
+            return [p]
+    ide_cfg = Path.home() / ".arduinoIDE" / "arduino-cli.yaml"
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
     candidates = [
-        Path.home() / ".arduino15" / "arduino-cli",
+        local / "Programs" / "Arduino IDE" / "resources" / "app" / "lib" / "backend" / "resources" / "arduino-cli.exe",
+        Path("C:/Program Files/Arduino IDE/resources/app/lib/backend/resources/arduino-cli.exe"),
+        Path("/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli"),
+        local / "Programs" / "arduino-cli" / "arduino-cli.exe",
         Path("/usr/local/bin/arduino-cli"),
         Path("/opt/homebrew/bin/arduino-cli"),
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "arduino-cli" / "arduino-cli.exe",
     ]
     for c in candidates:
         if c.is_file():
-            return str(c)
+            cmd = [str(c)]
+            if "Arduino IDE" in str(c) and ide_cfg.is_file():
+                cmd += ["--config-file", str(ide_cfg)]
+            return cmd
     raise SystemExit(
-        "arduino-cli not found. Install it (macOS: brew install arduino-cli; Windows: winget install ArduinoSA.CLI;\n"
-        "Linux: curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh)\n"
-        "or build the sketch in Arduino IDE instead (README)."
+        "arduino-cli not found. Install Arduino IDE 2 (its bundled arduino-cli is found automatically),\n"
+        "or arduino-cli itself (macOS: brew install arduino-cli; Windows: winget install ArduinoSA.CLI;\n"
+        "Linux: curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh)."
     )
 
 
@@ -47,15 +56,15 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=check)
 
 
-def ensure_core_and_libs(cli: str, single_wire: bool) -> None:
-    cores = subprocess.run([cli, "core", "list", "--format", "json"], capture_output=True, text=True)
+def ensure_core_and_libs(cli: list[str], single_wire: bool) -> None:
+    cores = subprocess.run(cli + ["core", "list", "--format", "json"], capture_output=True, text=True)
     if "esp32:esp32" not in cores.stdout:
-        run([cli, "core", "update-index", "--additional-urls", ESP32_INDEX])
-        run([cli, "core", "install", "esp32:esp32", "--additional-urls", ESP32_INDEX])
+        run(cli + ["core", "update-index", "--additional-urls", ESP32_INDEX])
+        run(cli + ["core", "install", "esp32:esp32", "--additional-urls", ESP32_INDEX])
     if single_wire:
-        libs = subprocess.run([cli, "lib", "list", "FastLED", "--format", "json"], capture_output=True, text=True)
+        libs = subprocess.run(cli + ["lib", "list", "FastLED", "--format", "json"], capture_output=True, text=True)
         if "FastLED" not in libs.stdout:
-            run([cli, "lib", "install", "FastLED"])
+            run(cli + ["lib", "install", "FastLED"])
 
 
 def chip_is_single_wire() -> bool:
@@ -74,7 +83,7 @@ def flash(board: str, serial_port: str | None, build_only: bool = False, huge: b
     if huge is False:
         opts = ""
     ensure_core_and_libs(cli, chip_is_single_wire())
-    cmd = [cli, "compile", "--fqbn", fqbn]
+    cmd = cli + ["compile", "--fqbn", fqbn]
     if opts:
         cmd += ["--board-options", opts]
     if not build_only:

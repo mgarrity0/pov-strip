@@ -12,7 +12,7 @@ from povstrip.protocol import Device, DeviceError, PovHeader, pov_file  # noqa: 
 def test_round_trip():
     fake = FakeDevice()
     time.sleep(0.2)
-    dev = Device(fake.path)
+    dev = Device(fake.path, transport=fake.endpoint())
     dev.connect()
     assert dev.info()[0].startswith("-- POV strip")
     rgb = bytes((i * 7) & 255 for i in range(120 * 16 * 3))

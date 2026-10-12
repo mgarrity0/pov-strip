@@ -91,21 +91,24 @@ def pick_port(explicit: Optional[str] = None) -> str:
 class Device:
     """One open serial connection to the strip."""
 
-    def __init__(self, port: str, baud: int = 115200, log: Optional[Callable[[str], None]] = None):
+    def __init__(self, port: str, baud: int = 115200, log: Optional[Callable[[str], None]] = None, transport=None):
         self.port = port
         self.baud = baud
         self.log = log or (lambda s: None)
         self.banner: list[str] = []
-        self.ser = serial.Serial()
-        self.ser.port = port
-        self.ser.baudrate = baud
-        self.ser.timeout = 0.01
-        self.ser.write_timeout = 5
-        # Try not to reset the board (DTR/RTS drive the ESP32 auto-reset circuit).
-        # Many drivers pulse them anyway; connect() copes with a reboot.
-        self.ser.dtr = False
-        self.ser.rts = False
-        self.ser.open()
+        if transport is not None:  # a simulated strip (fakedev.FakeDevice.endpoint())
+            self.ser = transport
+        else:
+            self.ser = serial.Serial()
+            self.ser.port = port
+            self.ser.baudrate = baud
+            self.ser.timeout = 0.01
+            self.ser.write_timeout = 5
+            # Try not to reset the board (DTR/RTS drive the ESP32 auto-reset circuit).
+            # Many drivers pulse them anyway; connect() copes with a reboot.
+            self.ser.dtr = False
+            self.ser.rts = False
+            self.ser.open()
         self._buf = b""
 
     # ---- low level -----------------------------------------------------------------
