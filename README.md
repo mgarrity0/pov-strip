@@ -127,7 +127,7 @@ Viewers resolve flicker during saccades up to a mean of ~2 kHz (Roberts & Wilkin
 
 Images stored on the strip use the partition's SPIFFS area (1.5 MB with the default scheme, 1 MB with Huge APP), so the partition scheme no longer matters for image count unless you compile images in.
 
-Built with arduino-cli 1.5.1 (the build engine inside Arduino IDE 2) and esp32 3.3.12 for ESP32 Dev Module, Huge APP: 359,408 bytes (WS2812B) / 370,848 bytes (APA102), no warnings from the sketch at `-Wall -Wextra`. The firmware's resampler, the Studio's and the Python tool's were run on the same inputs (`tools/check_resampler`). The serial protocol was exercised against the simulated strip (`test/`). Hardware so far: an ESP32 DevKit (CH340) driving WS2812B.
+Built with arduino-cli 1.5.1 (the build engine inside Arduino IDE 2) and esp32 3.3.12, Huge APP, no warnings from the sketch at `-Wall -Wextra`: ESP32 Dev Module 359,408 bytes (WS2812B) / 370,848 (APA102); ESP32-S3 365,920 / 375,568. The firmware's resampler, the Studio's and the Python tool's were run on the same inputs (`tools/check_resampler`). The serial protocol was exercised against the simulated strip (`test/`). Hardware so far: an ESP32 DevKit (CH340) driving WS2812B.
 
 Why not FastLED: its ESP32 RMT driver (3.10 and later) fixes the strip length at `addLeds()`, and this firmware changes the active LED count at runtime (`len`, `dens`), so every column failed an assert once the two differed. Driving the RMT peripheral directly removes the dependency and the version drift.
 

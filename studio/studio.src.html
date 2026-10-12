@@ -491,10 +491,10 @@ const BOARDS = { xiao: [9, 7], devkit: [4, 18], s3devkit: [11, 12] };
 // (arduino-esp32 3.3.12, esptool elf2image): [clocked SPI path, single-wire RMT path].
 // `small` is the Arduino IDE default partition, for boards where the project uses Huge APP.
 const BOARD_FLASH = {
-  xiao:     { app: 3342336, part: "XIAO default 8 MB layout", fw: [381968, 416448] },
+  xiao:     { app: 3342336, part: "XIAO default 8 MB layout", fw: [375568, 365920] },
   devkit:   { app: 3145728, part: "Huge APP partition", fw: [370848, 359408], small: 1310720 },
-  s3devkit: { app: 3145728, part: "Huge APP partition", fw: [381968, 416448], small: 1310720 },
-  custom:   { app: 1310720, part: "default 4 MB layout", fw: [381968, 416448] },
+  s3devkit: { app: 3145728, part: "Huge APP partition", fw: [375568, 365920], small: 1310720 },
+  custom:   { app: 1310720, part: "default 4 MB layout", fw: [375568, 365920] },
 };
 function flashBudget() {
   const b = BOARD_FLASH[st.board] || BOARD_FLASH.custom;
