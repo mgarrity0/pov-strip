@@ -105,7 +105,7 @@ def cmd_push(args):
     gap_us = round(core.recommended_gap_ms(d.glance_ms, pass_ms) * 1000) if args.gap is None else int(args.gap * 1000)
     name = args.name or args.image.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     hdr = PovHeader(rows=d.n, cols=cols, col_us=d.col_us, gap_us=gap_us, dir={"ltr": 0, "rtl": 1, "alt": 2, "pal": 3}[args.dir],
-                    hold_s=args.hold, length_m=args.len, name=name)
+                    hold_s=args.hold, length_m=args.len, name=name, sweep_dps=int(round(args.eye)))
     data = pov_file(hdr, rgb.tobytes())
     print(f"{name}: {d.n} LEDs x {cols} columns, {d.col_us} us per column"
           f"{' (chip-limited)' if d.chip_limited else ''}, pass {pass_ms:.1f} ms, gap {gap_us / 1000:.1f} ms, {len(data)} bytes")

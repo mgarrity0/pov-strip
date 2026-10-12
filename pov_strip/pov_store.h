@@ -10,7 +10,8 @@
 //   8       4     col_us    (uint32, design column period)
 //   12      4     gap_us    (uint32, dark time after each pass)
 //   16      1     dir       (POV_DIR_*)
-//   17      1     reserved
+//   17      1     sweep     (design eye/head speed across the strip in units of 5 deg/s;
+//                            0 = unknown. 60 = 300 deg/s)
 //   18      2     hold_s    (uint16, seconds before the playlist advances; 0 = stay)
 //   20      4     length_m  (float32, strip length the image was sized for)
 //   24      24    name      (UTF-8, zero padded)
@@ -119,6 +120,7 @@ static bool parseHeader(const uint8_t *h, PovImage &im, char *name, uint32_t fil
   im.col_us = rd32(h + 8);
   im.gap_us = rd32(h + 12);
   im.dir = h[16];
+  im.sweep_dps = (uint16_t)h[17] * 5u;
   im.hold_s = rd16(h + 18);
   uint32_t lm = rd32(h + 20);
   memcpy(&im.length_m, &lm, 4);

@@ -85,14 +85,14 @@ class FakeDevice:
             self.path = os.ttyname(slave)
         self.store: dict[int, bytes] = {}
         self.settings: dict[str, str] = {"len": "2.00", "dens": "60", "bri": "255", "gamma": "2.40", "mode": "full",
-                                         "dir": "img", "col": "0", "gap": "img", "auto": "on"}
+                                         "dir": "img", "col": "0", "gap": "img", "auto": "on", "speed": "img"}
         self.current = 1
         self.test = False
         self.commands: list[str] = []
         self._stop = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        self._write("\n-- POV strip 2.0 (fake) --\nready\n")
+        self._write("\n-- POV strip 2.1 (fake) --\nready\n")
 
     def endpoint(self) -> _Endpoint:
         """What the host opens: Device("fake://", transport=fake.endpoint())."""
@@ -151,11 +151,13 @@ class FakeDevice:
 
     def _info(self):
         n = len(self.store)
-        self._write(f"\n-- POV strip 2.0 (fake) --\nchip WS2812B (single-wire)\nstrip {self.settings['len']} m x "
+        self._write(f"\n-- POV strip 2.1 (fake) --\nchip WS2812B (single-wire)\nstrip {self.settings['len']} m x "
                     f"{self.settings['dens']}/m = 120 LEDs (max 720)\nimage {self.current}/{max(1, n)}"
                     f"{'' if n else ' (compiled-in)'}: {'slot' if n else 'Heart'}, 120 rows x 16 cols\n"
-                    f"column 3905 us (256 Hz); 16 columns per pass = 62.5 ms; gap 20.9 ms\n"
-                    f"dir ltr (image), render {self.settings['mode']}, gamma {self.settings['gamma']}, bri {self.settings['bri']}, auto {self.settings['auto']}\n")
+                    f"column 3905 us (256 Hz); 16 columns per pass = 62.5 ms; gap "
+                    f"{'20.9 ms (image)' if self.settings['gap'] == 'img' else f'{int(self.settings["gap"]) / 1000:.1f} ms'}\n"
+                    f"sweep {self.settings['speed']}{' deg/s (image designed for 300: pass and gap x1.00)' if self.settings['speed'] != 'img' else ': the image\'s design speed, 300 deg/s'}\n"
+                    f"dir {'ltr (image)' if self.settings['dir'] == 'img' else self.settings['dir']}, render {self.settings['mode']}, gamma {self.settings['gamma']}, bri {self.settings['bri']}, auto {self.settings['auto']}\n")
 
     def _handle(self, text: str):
         self.commands.append(text)
@@ -164,7 +166,7 @@ class FakeDevice:
         if cmd == "ping":
             self._write("ok\n")
         elif cmd == "ver":
-            self._write("pov 2.0 fake\nok\n")
+            self._write("pov 2.1 fake\nok\n")
         elif cmd in ("info", "help", "next", "save", "load", "reset"):
             if cmd == "save":
                 self._write("saved\n")
@@ -221,7 +223,7 @@ class FakeDevice:
             self.store[slot] = data
             self.current = sorted(self.store).index(slot) + 1
             self._write(f"ok {total}\n")
-        elif cmd in ("len", "dens", "bri", "gamma", "mode", "dir", "col", "gap", "auto", "img", "mhz"):
+        elif cmd in ("len", "dens", "bri", "gamma", "mode", "dir", "col", "gap", "auto", "img", "mhz", "speed"):
             if not args:
                 self._write("err missing value\n")
                 return

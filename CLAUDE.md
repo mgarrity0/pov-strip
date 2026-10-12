@@ -16,7 +16,10 @@ implementations.
   `frameBytes(n)*8/spiHz + 25 us`; single-wire `n*24*bitNs + reset + 25 us`. The three
   copies: `led_out.h minColUs`, `core.js chipMinColUs`, `povstrip/core.py chip_min_col_us`.
 - Image width is preserved across column periods: displayed columns =
-  `im.cols * im.col_us / colUs * (lengthM / im.length_m)` (`applyImage`).
+  `im.cols * im.col_us * stretch / colUs * (lengthM / im.length_m)` (`applyImage`), with
+  `stretch = designSweep / S.sweepDps` (1 when `speed img`). The design sweep speed travels
+  in header byte 17 (units of 5 deg/s, 0 = unknown = 300) and `PovImage.sweep_dps`; the image's
+  gap scales by the same stretch.
 - Resampling when the display grid differs from the stored image: area average in linear
   light through the output gamma, integer-overlap weights. `resampleImage` (C),
   `POV.areaResample` (JS), `core.area_resample` (Python) must agree within 2/255:
@@ -39,7 +42,8 @@ implementations.
   (inlines core.js and the firmware sources for the project-zip export). Never edit
   `studio/pov-strip-studio.html` by hand.
 - Demo image for the shipped config: `node tools/gen_default.js`.
-- Tests: `node test/core_test.js`, `python3 test/test_protocol.py`, `povstrip serve --fake`.
+- Tests: `node test/core_test.js`, `python3 test/test_protocol.py`, `python3 test/test_studio_live.py`
+  (headless Chromium via playwright; skips when missing), `povstrip serve --fake`.
 - Hardware so far (2026-10-11): ESP32 DevKit (CH340) with WS2812B. Clocked chips and the other
   single-wire chips are untested on hardware.
 

@@ -31,6 +31,8 @@ povstrip serve
 
 opens the Studio in your browser with a "Strip over USB" panel: pick the port, Connect, tick the slides you want, **Send ticked slides to strip**. The page takes the strip's chip, length and density from the board when it connects, so the preview matches what is plugged in. Nothing is recompiled; the strip starts playing the new images as they arrive and keeps them across power cycles.
 
+Live tuning: once connected, the "Live on the strip" sliders (sweep speed, dark gap, brightness, direction) change the strip as you drag, no re-upload. Sweep speed is how fast the strip crosses your eye; the slides were made for the Eye speed in the design controls (300°/s by default, a glance). For a head shake set it lower: ±8° at 2 Hz peaks near 100°/s. The firmware stretches each pass and the gap by design/actual so the picture keeps its width. Apply strip settings or Send saves the values on the strip.
+
 Without hardware: `povstrip serve --fake` simulates a strip.
 
 Updating: `git pull`, then start `povstrip serve` (or `serve.cmd`) again; it asks the server that is still running to quit and takes its port. The page itself is re-read from disk on every reload, firmware changes need the Flash button, Python changes need that restart.
@@ -42,6 +44,7 @@ povstrip push photo.png --height 0.8 --hold 8     # render for the strip and upl
 povstrip push logo.png --slot 2 --dir pal --len 2 --dens 60 --chip WS2812B
 povstrip ls | info | wipe | rm 2
 povstrip cmd len 2.5                              # any console command
+povstrip cmd speed 100                            # live: tune for a slower head shake
 povstrip monitor                                  # raw serial console
 ```
 
@@ -98,6 +101,8 @@ Direction: a left-to-right glance paints later columns further left, so `ltr` pl
 
 Gap: after each pass the strip goes dark. With pass T, gap G and glance duration D, the chance one glance shows exactly one whole image is (D - T)/(T + G) for G >= D - T; the Studio sets G = D - T per slide.
 
+Sweep speed: an image is painted across the retina at the viewer's angular speed, so its width is pass time x speed. Each image carries the speed it was designed for (header byte 17, `sweep_dps` in `PovImage`). `speed <deg/s>` tells the firmware the real speed; it scales the wanted column period and the image's gap by design/actual, and the column count follows (`applyImage`), so a slower head shake gets a longer pass of the same angular width, using more of the stored columns when the chip had been the limit.
+
 Viewers resolve flicker during saccades up to a mean of ~2 kHz (Roberts & Wilkins 2013), so column rates far above that blur horizontally.
 
 ## Serial console
@@ -109,6 +114,8 @@ Viewers resolve flicker during saccades up to a mean of ~2 kHz (Roberts & Wilkin
     dens <n>             LEDs per meter
     col <us> | col 0     column period override | image's
     gap <us> | gap img   dark time after each pass
+    speed <deg/s> | speed img   how fast the eye or head crosses the strip (live tuning:
+                         slower than the design speed stretches pass and gap, see below)
     dir ltr|rtl|alt|pal|img
     bri <0-255>  gamma <x>  mode full|safe|current
     img <n> | next       select image; auto on|off for the playlist

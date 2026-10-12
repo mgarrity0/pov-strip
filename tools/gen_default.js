@@ -21,6 +21,6 @@ const lines = [
   `Column ${d.colUs} us (${Math.round(1e6 / d.colUs)} Hz), direction ltr, gap per slide`,
   `Default demo for the shipped config.h. Replace with an export from POV Strip Studio.`,
 ];
-const hdr = P.makeHeader(slides, { colUs: d.colUs, gapUs: 0, dir: 0, lengthM: s.lengthM, lines, date: new Date().toISOString().slice(0, 10) });
+const hdr = P.makeHeader(slides, { colUs: d.colUs, gapUs: 0, dir: 0, lengthM: s.lengthM, sweepDps: s.sweepDps, lines, date: new Date().toISOString().slice(0, 10) });
 fs.writeFileSync(path.join(ROOT, "pov_strip", "pov_image.h"), hdr);
 console.log("n", d.n, "colUs", d.colUs, slides.map((x) => `${x.label}: ${x.cols} cols, gap ${x.gapUs} us`).join("; "), "bytes", hdr.length);

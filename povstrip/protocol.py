@@ -35,18 +35,21 @@ class PovHeader:
     hold_s: int = 8
     length_m: float = 0.0
     name: str = ""
+    sweep_dps: int = 0   # eye/head speed the column period was designed for (deg/s); 0 = unknown
 
     def pack(self) -> bytes:
         name = self.name.encode("utf-8")[:23].ljust(24, b"\0")
+        sweep = min(255, max(0, round(self.sweep_dps / 5)))   # byte 17, units of 5 deg/s
         return struct.pack("<4sHHIIBBHf24s", b"POV1", self.rows, self.cols, self.col_us, self.gap_us,
-                           self.dir, 0, self.hold_s, float(self.length_m), name)
+                           self.dir, sweep, self.hold_s, float(self.length_m), name)
 
     @staticmethod
     def unpack(b: bytes) -> "PovHeader":
-        magic, rows, cols, col_us, gap_us, d, _r, hold, length, name = struct.unpack("<4sHHIIBBHf24s", b[:HEADER_BYTES])
+        magic, rows, cols, col_us, gap_us, d, sweep, hold, length, name = struct.unpack("<4sHHIIBBHf24s", b[:HEADER_BYTES])
         if magic != b"POV1":
             raise DeviceError("not a POV1 file")
-        return PovHeader(rows, cols, col_us, gap_us, d, hold, length, name.rstrip(b"\0").decode("utf-8", "replace"))
+        return PovHeader(rows, cols, col_us, gap_us, d, hold, length, name.rstrip(b"\0").decode("utf-8", "replace"),
+                         sweep * 5)
 
 
 def pov_file(header: PovHeader, rgb: bytes) -> bytes:
@@ -167,8 +170,8 @@ class Device:
         if "assert failed" in text or "Backtrace" in text or "Rebooting..." in text:
             hint = "; the board is crashing at boot, see the log"
         elif "unknown command" in text:
-            hint = "; an older pov-strip firmware is running, flash 2.0"
-        raise DeviceError("no answer from the strip (right port? pov-strip 2.0 flashed?)" + hint)
+            hint = "; an older pov-strip firmware is running, flash 2.1"
+        raise DeviceError("no answer from the strip (right port? pov-strip 2.1 flashed?)" + hint)
 
     def cmd(self, text: str, timeout: float = 6.0) -> tuple[list[str], bool, str]:
         """Sends one console command. Returns (output lines, ok, error message)."""

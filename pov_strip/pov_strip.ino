@@ -17,7 +17,7 @@
 #include "pov_store.h"
 #include "led_out.h"
 
-#define POV_VERSION "2.0"
+#define POV_VERSION "2.1"
 #define COMPILED_COUNT ((uint16_t)(sizeof(POV_IMAGES) / sizeof(POV_IMAGES[0])))
 static const uint32_t MAX_COLS = 8192;
 
@@ -34,6 +34,7 @@ struct Settings {
   uint16_t img;
   bool autoAdvance;
   float spiMHz;
+  uint16_t sweepDps; // viewer's eye/head speed across the strip; 0 = the image's design speed
 };
 static Settings S;
 static Preferences prefs;
@@ -53,6 +54,7 @@ static bool g_nearest = false;              // nearest-pixel mapping in use
 static uint32_t g_colUs = 0;                // effective column period
 static uint32_t g_wantUs = 0;               // requested column period
 static uint32_t g_gapUs = 0;
+static float g_stretch = 1.0f;              // pass and gap time scale from the sweep speed
 static uint8_t g_dir = POV_DIR_LTR;
 static uint8_t g_mode = RENDER_FULL;
 static uint16_t g_img = 0;                  // playlist index
@@ -115,6 +117,7 @@ static void defaults() {
   S.img = 0;
   S.autoAdvance = true;
   S.spiMHz = POV_SPI_MHZ;
+  S.sweepDps = 0;
 }
 
 static void loadSettings() {
@@ -137,6 +140,7 @@ static void loadSettings() {
   S.img = prefs.getUShort("img", S.img);
   S.autoAdvance = prefs.getBool("auto", S.autoAdvance);
   S.spiMHz = prefs.getFloat("mhz", S.spiMHz);
+  S.sweepDps = prefs.getUShort("spd", S.sweepDps);
   prefs.end();
 }
 
@@ -153,6 +157,7 @@ static void saveSettings() {
   prefs.putUShort("img", g_img);
   prefs.putBool("auto", S.autoAdvance);
   prefs.putFloat("mhz", S.spiMHz);
+  prefs.putUShort("spd", S.sweepDps);
   prefs.putUInt("cfg", configHash());
   prefs.end();
 }
@@ -230,21 +235,29 @@ static void resampleImage(const PovImage &im, uint8_t *dst, uint16_t rows, uint3
 static void applyImage() {
   const PovImage &im = g_cur;
 
+  // Sweep speed: the image spans im.cols * im.col_us of eye travel at its design
+  // speed. A viewer moving slower (a head shake) needs the pass stretched by
+  // design / actual so the picture keeps its width on the retina; the gap scales
+  // with it so the cycle stays in step with the motion.
+  const uint16_t designDps = im.sweep_dps ? im.sweep_dps : POV_DEFAULT_SWEEP_DPS;
+  g_stretch = S.sweepDps ? (float)designDps / (float)S.sweepDps : 1.0f;
+
   // Timing: never faster than the chip can clock out a column.
-  g_wantUs = S.colUs ? S.colUs : im.col_us;
+  g_wantUs = S.colUs ? S.colUs : (uint32_t)lroundf(im.col_us * g_stretch);
+  if (g_wantUs < 1) g_wantUs = 1;
   const uint32_t minUs = ledout::minColUs();
   g_colUs = g_wantUs < minUs ? minUs : g_wantUs;
-  g_gapUs = S.gapUs >= 0 ? (uint32_t)S.gapUs : im.gap_us;
+  g_gapUs = S.gapUs >= 0 ? (uint32_t)S.gapUs : (uint32_t)lroundf(im.gap_us * g_stretch);
   g_dir = S.dir >= 0 ? (uint8_t)S.dir : im.dir;
 
   // Columns: keep the designed width and aspect. The image spans
-  // im.cols * im.col_us of eye travel; at another column period that takes a
+  // im.cols * im.col_us * stretch of time; at another column period that takes a
   // different number of columns. A longer strip is taller, so it needs
   // proportionally more columns.
   double cols = im.cols;
 #if POV_ASPECT_LOCK
   if (im.length_m > 0.01f) cols *= S.lengthM / im.length_m;
-  if (im.col_us > 0) cols *= (double)im.col_us / (double)g_colUs;
+  if (im.col_us > 0) cols *= (double)im.col_us * g_stretch / (double)g_colUs;
 #endif
   uint32_t c = (uint32_t)lround(cols);
   if (c < 1) c = 1;
@@ -473,12 +486,20 @@ static void printInfo() {
   Serial.printf("image %u/%u%s: %s, %u rows x %u cols, sized for %.2f m, hold %u s\n", g_img + 1,
                 imageCount(), g_curFromStore ? "" : " (compiled-in)", g_curName, im.rows, im.cols,
                 im.length_m, im.hold_s);
-  Serial.printf("column %lu us (%.0f Hz); %lu columns per pass = %.1f ms; gap %.1f ms\n",
+  Serial.printf("column %lu us (%.0f Hz); %lu columns per pass = %.1f ms; gap %.1f ms%s\n",
                 (unsigned long)g_colUs, 1e6 / g_colUs, (unsigned long)g_cols,
-                g_cols * (double)g_colUs / 1000.0, g_gapUs / 1000.0);
+                g_cols * (double)g_colUs / 1000.0, g_gapUs / 1000.0, S.gapUs < 0 ? " (image)" : "");
   if (g_colUs > g_wantUs)
     Serial.printf("  chip-limited: wanted %lu us; fewer, longer columns keep the width\n",
                   (unsigned long)g_wantUs);
+  {
+    const uint16_t designDps = im.sweep_dps ? im.sweep_dps : POV_DEFAULT_SWEEP_DPS;
+    if (S.sweepDps)
+      Serial.printf("sweep %u deg/s (image designed for %u%s: pass and gap x%.2f)\n", S.sweepDps, designDps,
+                    im.sweep_dps ? "" : " assumed", g_stretch);
+    else
+      Serial.printf("sweep img: the image's design speed, %u deg/s%s\n", designDps, im.sweep_dps ? "" : " assumed");
+  }
   if (g_resampled)
     Serial.printf("  resampled to %u x %lu in RAM (area average); export for this strip to skip that\n",
                   g_n, (unsigned long)g_cols);
@@ -500,6 +521,8 @@ static void printHelp() {
       "  dens <n>             LEDs per meter\n"
       "  col <us> | col 0     column period override | use image's\n"
       "  gap <us> | gap img   dark time after each pass\n"
+      "  speed <deg/s> | speed img   how fast the viewer's eye or head crosses the strip;\n"
+      "                       slower than the image's design speed stretches pass and gap\n"
       "  dir ltr|rtl|alt|pal|img\n"
       "  bri <0-255>   gamma <x>   mode full|safe|current\n"
       "  img <n> | next       select image (1-based)\n"
@@ -600,6 +623,14 @@ static void handleCommand(char *line) {
     applyImage();
   } else if (!strcmp(cmd, "gap")) {
     S.gapUs = !strcmp(arg, "img") ? -1 : (int32_t)strtol(arg, nullptr, 10);
+    applyImage();
+  } else if (!strcmp(cmd, "speed")) {
+    if (!strcmp(arg, "img")) S.sweepDps = 0;
+    else {
+      const long v = atol(arg);
+      if (v < 10 || v > 5000) { Serial.println("err speed: 10 to 5000 deg/s, or img"); return; }
+      S.sweepDps = (uint16_t)v;
+    }
     applyImage();
   } else if (!strcmp(cmd, "dir")) {
     if (!strcmp(arg, "ltr")) S.dir = POV_DIR_LTR;

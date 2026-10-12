@@ -210,7 +210,8 @@ POV.makeHeader = (slides, meta) => {
   slides.forEach((sl, k) => {
     const gap = sl.gapUs !== undefined ? sl.gapUs : meta.gapUs;
     out.push(`  {pov_img_${k}, ${sl.rows}, ${sl.cols}, ${Math.round(meta.colUs)}u, ${Math.round(gap)}u, ` +
-             `${POV.DIR_MACRO[meta.dir]}, ${meta.lengthM.toFixed(2)}f, ${Math.max(0, Math.round(sl.holdS))}},`);
+             `${POV.DIR_MACRO[meta.dir]}, ${meta.lengthM.toFixed(2)}f, ${Math.max(0, Math.round(sl.holdS))}, ` +
+             `${Math.max(0, Math.round(meta.sweepDps || 0))}},`);
   });
   out.push("};");
   out.push("");

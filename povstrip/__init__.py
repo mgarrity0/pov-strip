@@ -3,4 +3,4 @@
 Talks to the ESP32 over USB serial: uploads images into its flash, changes settings,
 serves the Studio page locally, and builds/flashes the firmware with arduino-cli.
 """
-__version__ = "2.0.0"
+__version__ = "2.1.0"

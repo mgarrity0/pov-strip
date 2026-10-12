@@ -45,4 +45,8 @@ typedef struct {
   uint8_t  dir;       // POV_DIR_*
   float    length_m;  // strip length the image was sized for (0 = unknown)
   uint16_t hold_s;    // seconds on screen before the playlist advances
+  uint16_t sweep_dps; // eye/head speed across the strip the column period was designed
+                      // for, deg/s (0 = unknown: POV_DEFAULT_SWEEP_DPS is assumed)
 } PovImage;
+
+#define POV_DEFAULT_SWEEP_DPS 300

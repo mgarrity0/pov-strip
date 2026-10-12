@@ -78,6 +78,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .device .live i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: inline-block; }
 .device .live.on i { background: var(--ok); }
 .device .live.busy i { background: var(--warn); }
+.device .tune { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.device .tune #tuneState { font-weight: 400; color: var(--muted); text-align: right; white-space: normal; }
 .prog { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .prog > div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
 .field-wrap { grid-area: field; min-width: 0; }
@@ -411,6 +413,34 @@ tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transf
         <button class="btn" type="button" id="devInfo" disabled>Info</button>
         <button class="btn danger" type="button" id="devWipe" disabled>Wipe strip</button>
       </div>
+      <div class="tune" id="devTune">
+        <div class="lab"><span>Live on the strip</span><span class="val" id="tuneState">connect to tune</span></div>
+        <div class="pins">
+          <div class="row">
+            <div class="lab"><label for="tuneSpeed">Sweep speed</label><output id="tuneSpeedOut"></output></div>
+            <input type="range" id="tuneSpeed" min="40" max="600" step="5" disabled>
+          </div>
+          <div class="row">
+            <div class="lab"><label for="tuneGap">Dark gap</label><output id="tuneGapOut"></output></div>
+            <input type="range" id="tuneGap" min="0" max="400" step="5" disabled>
+          </div>
+          <div class="row">
+            <div class="lab"><label for="tuneBri">Brightness</label><output id="tuneBriOut"></output></div>
+            <input type="range" id="tuneBri" min="1" max="255" step="1" disabled>
+          </div>
+          <div class="row">
+            <div class="lab"><label for="tuneDir">Direction</label></div>
+            <select id="tuneDir" disabled>
+              <option value="img">as uploaded</option>
+              <option value="ltr">left to right</option>
+              <option value="rtl">right to left</option>
+              <option value="alt">alternate</option>
+              <option value="pal">both ways</option>
+            </select>
+          </div>
+        </div>
+        <div class="hint">Takes effect as you drag, no re-upload. Sweep speed is how fast the strip crosses your eye: slower than the speed the slides were made for stretches each pass and the gap so the picture keeps its width. A head shake of &plusmn;8&deg; at 2 Hz peaks near 100&deg;/s; a 25&deg; glance runs 300 to 500&deg;/s. Gap at 0 = as uploaded (scaled with the speed). Apply or Send saves these on the strip.</div>
+      </div>
       <div class="prog" id="devProg" hidden><div></div></div>
       <div class="codebox"><pre id="devLog">Plug the ESP32 in, pick its port, Connect.</pre></div>
     </section>
@@ -479,6 +509,7 @@ const DEF = {
   dir: "ltr", colMode: "auto", colUsManual: 800, gapMode: "auto", gapMsManual: 40,
   mode: "full", bri: 255, gamma: 2.4, modelPwm: true,
   board: "devkit", pinData: 4, pinClock: 18, order: "BGR", dataBottom: true,
+  tune: { speedDps: 0, gapMs: 0, dir: "img" },   // live strip settings; 0 = as uploaded
   slides: [
     { kind: "pattern", pattern: "heart", scale: 0.8, hold: 8, include: true },
     { kind: "text", text: "HI", layout: "stacked", font: "shoulders", fill: "vrainbow", color: "#ff3d8b", scale: 0.92, hold: 8, include: false },
@@ -517,6 +548,7 @@ st.slides = (st.slides || []).filter((s) => s && s.kind !== "image");
 if (!st.slides.length) st.slides = JSON.parse(JSON.stringify(DEF.slides));
 if (!POV.CHIPS[st.chip]) st.chip = DEF.chip;
 st.slides.forEach((sl, i) => { if (sl.include === undefined) sl.include = i === 0; });
+st.tune = { ...DEF.tune, ...(st.tune && typeof st.tune === "object" ? st.tune : {}) };
 st.sel = Math.min(Math.max(0, st.sel | 0), st.slides.length - 1);
 const images = new WeakMap();   // slide -> ImageBitmap/HTMLImageElement (not saved)
 
@@ -1179,7 +1211,7 @@ function headerText() {
     `Column ${D.colUs} us (${Math.round(1e6 / D.colUs)} Hz), direction ${st.dir}, gap ${st.gapMode === "auto" ? "per slide" : st.gapMsManual + " ms"}`,
   ];
   return POV.makeHeader(exported().map((r) => ({ label: r.label, rgb: r.rgb, rows: r.rows, cols: r.cols, holdS: r.hold, gapUs: gapUsFor(r.cols) })),
-    { colUs: D.colUs, gapUs: 0, dir: dirCode(), lengthM: st.lengthM, lines, date });
+    { colUs: D.colUs, gapUs: 0, dir: dirCode(), lengthM: st.lengthM, sweepDps: st.sweepDps, lines, date });
 }
 function configText() {
   return POV.makeConfig(FW.files["pov_strip/config.h"], {
@@ -1261,6 +1293,8 @@ function devState(connected, busy, text) {
   live.className = "live" + (busy ? " busy" : connected ? " on" : "");
   live.lastElementChild.textContent = text;
   for (const id of ["devSend", "devApply", "devTest", "devNext", "devInfo", "devWipe"]) $(id).disabled = !connected || busy;
+  for (const id of ["tuneSpeed", "tuneGap", "tuneBri", "tuneDir"]) $(id).disabled = !connected;
+  if (!connected) $("tuneState").textContent = "connect to tune";
   $("devConnect").textContent = connected ? "Disconnect" : "Connect";
   $("devConnect").disabled = busy;
 }
@@ -1290,11 +1324,79 @@ function syncFromDevice(lines) {
     if (dens !== +st.density) { st.density = dens; $("dens").value = dens; changes.push(`${dens} LEDs/m`); }
   }
   if (changes.length) { devLog("page set to the strip's " + changes.join(", ")); changed(); }
+  // live values: the strip is the source of truth when it connects
+  const sw = txt.match(/^sweep (\d+) deg\/s/m) || txt.match(/^sweep img:.*?(\d+) deg\/s/m);
+  if (sw) st.tune.speedDps = +sw[1];
+  const gp = txt.match(/gap ([\d.]+) ms( \(image\))?/);
+  if (gp) st.tune.gapMs = gp[2] ? 0 : +gp[1];
+  const dr = txt.match(/^dir (\w+)( \(image\))?/m);
+  if (dr) st.tune.dir = dr[2] ? "img" : dr[1];
+  const br = txt.match(/bri (\d+)/);
+  if (br && +br[1] !== +st.bri) { st.bri = +br[1]; $("bri").value = st.bri; changed(); }
+  tuneShow(sw && gp ? ((txt.match(/^column .*$/m) || [""])[0]) : "");
+  save();
+}
+// ---- live tuning: each change goes to the strip at once (RAM only; Apply / Send save) ----
+function tuneShow(line) {
+  const t = st.tune;
+  $("tuneSpeed").value = t.speedDps > 0 ? t.speedDps : st.sweepDps;
+  $("tuneSpeedOut").textContent = `${t.speedDps > 0 ? t.speedDps : st.sweepDps}°/s`;
+  $("tuneGap").value = t.gapMs;
+  $("tuneGapOut").textContent = t.gapMs > 0 ? `${t.gapMs} ms` : "as uploaded";
+  $("tuneBri").value = st.bri;
+  $("tuneBriOut").textContent = st.bri;
+  $("tuneDir").value = t.dir;
+  if (line !== undefined) $("tuneState").textContent = line || "";
+}
+const tuneQ = new Map();
+let tuneTimer = 0, tuneBusy = false;
+function tuneSend(key, cmd) {
+  tuneQ.set(key, cmd);
+  if (!tuneTimer) tuneTimer = setTimeout(tuneFlush, 120);
+}
+async function tuneFlush() {
+  tuneTimer = 0;
+  if (!dev.connected) { tuneQ.clear(); return; }
+  if (tuneBusy || dev.busy) { tuneTimer = setTimeout(tuneFlush, 200); return; }
+  tuneBusy = true;
+  try {
+    while (tuneQ.size) {
+      const [key, cmd] = tuneQ.entries().next().value;
+      tuneQ.delete(key);
+      const j = await api("/api/cmd", { text: cmd });
+      const line = j.lines.find((l) => /^column /.test(l)) || "";
+      $("tuneState").textContent = `${line} (live, not saved)`;
+    }
+  } catch (e) { devLog("live: " + e.message); }
+  tuneBusy = false;
+}
+$("tuneSpeed").addEventListener("input", () => {
+  st.tune.speedDps = +$("tuneSpeed").value; tuneShow(); save();
+  tuneSend("speed", `speed ${st.tune.speedDps}`);
+});
+$("tuneGap").addEventListener("input", () => {
+  st.tune.gapMs = +$("tuneGap").value; tuneShow(); save();
+  tuneSend("gap", st.tune.gapMs > 0 ? `gap ${Math.round(st.tune.gapMs * 1000)}` : "gap img");
+});
+$("tuneBri").addEventListener("input", () => {
+  st.bri = +$("tuneBri").value; $("bri").value = st.bri; tuneShow(); changed();
+  tuneSend("bri", `bri ${st.bri}`);
+});
+$("tuneDir").addEventListener("change", () => {
+  st.tune.dir = $("tuneDir").value; save();
+  tuneSend("dir", `dir ${st.tune.dir}`);
+});
+$("bri").addEventListener("input", () => { tuneShow(); if (dev.connected) tuneSend("bri", `bri ${st.bri}`); });
+tuneShow("");
+function tuneCommands() {
+  const t = st.tune;
+  return [`speed ${t.speedDps > 0 ? Math.round(t.speedDps) : "img"}`, `gap ${t.gapMs > 0 ? Math.round(t.gapMs * 1000) : "img"}`,
+    `dir ${t.dir}`, `bri ${st.bri}`];
 }
 function stripCommands() {
   const c = POV.CHIPS[st.chip];
-  const cmds = [`len ${st.lengthM.toFixed(2)}`, `dens ${st.density}`, "col 0", "gap img", "dir img",
-    `bri ${st.bri}`, `gamma ${(+st.gamma).toFixed(2)}`, `mode ${st.mode === "current" && !c.current ? "safe" : st.mode}`, "auto on"];
+  const cmds = [`len ${st.lengthM.toFixed(2)}`, `dens ${st.density}`, "col 0", ...tuneCommands(),
+    `gamma ${(+st.gamma).toFixed(2)}`, `mode ${st.mode === "current" && !c.current ? "safe" : st.mode}`, "auto on"];
   if (c.clocked) cmds.push(`mhz ${st.spiMHz}`);
   cmds.push("save");
   return cmds;
@@ -1314,7 +1416,10 @@ async function devInit() {
   await devPorts().catch((e) => devLog("ports: " + e.message));
   try {
     const s = await api("/api/status");
-    if (s.connected) { $("devPort").value = s.port; devState(true, false, `connected, ${s.port}`); }
+    if (s.connected) {
+      $("devPort").value = s.port; devState(true, false, `connected, ${s.port}`);
+      const info = await api("/api/info"); devLog(info.lines, true); syncFromDevice(info.lines);
+    }
   } catch (e) { /* ignore */ }
   $("devRefresh").addEventListener("click", () => devPorts().catch((e) => devLog("ports: " + e.message)));
   $("devBoard").value = st.board === "xiao" ? "xiao_esp32s3" : st.board === "s3devkit" ? "esp32s3_devkitc" : "esp32dev";
@@ -1390,7 +1495,7 @@ async function devInit() {
       let b = ""; const bytes = r.rgb;
       for (let i = 0; i < bytes.length; i += 0x8000) b += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
       const j = await api("/api/put", { slot: k, rgb_b64: btoa(b), header: { rows: r.rows, cols: r.cols, col_us: D.colUs, gap_us: gapUsFor(r.cols),
-        dir: dirCode(), hold_s: r.hold, length_m: st.lengthM, name: r.label.slice(0, 23) } });
+        dir: dirCode(), hold_s: r.hold, length_m: st.lengthM, name: r.label.slice(0, 23), sweep_dps: st.sweepDps } });
       devLog(`slot ${k}: ${r.label} ${r.rows}x${r.cols}, ${fmt.bytes(j.bytes)}`);
       prog.firstElementChild.style.width = `${Math.round(100 * k / ex.length)}%`;
     }

@@ -206,7 +206,8 @@ def make_handler(bridge: Bridge, quit_event: threading.Event):
                 if self.path == "/api/put":
                     h = body["header"]
                     hdr = PovHeader(int(h["rows"]), int(h["cols"]), int(h["col_us"]), int(h["gap_us"]), int(h.get("dir", 0)),
-                                    int(h.get("hold_s", 8)), float(h.get("length_m", 0)), str(h.get("name", "")))
+                                    int(h.get("hold_s", 8)), float(h.get("length_m", 0)), str(h.get("name", "")),
+                                    int(round(float(h.get("sweep_dps", 0)))))
                     data = pov_file(hdr, base64.b64decode(body["rgb_b64"]))
                     with bridge.lock:
                         bridge.require().put(int(body["slot"]), data)

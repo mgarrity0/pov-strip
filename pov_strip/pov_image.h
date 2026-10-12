@@ -252,5 +252,5 @@ static const uint8_t pov_img_0[] = {
 };
 
 static const PovImage POV_IMAGES[] = {
-  {pov_img_0, 120, 16, 3905u, 20853u, POV_DIR_LTR, 2.00f, 10},
+  {pov_img_0, 120, 16, 3905u, 20853u, POV_DIR_LTR, 2.00f, 10, 300},
 };
