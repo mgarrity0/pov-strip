@@ -21,7 +21,7 @@ Firmware, any of these:
 
 The first two use arduino-cli from PATH or the copy inside Arduino IDE 2, and install the esp32 core themselves if it is missing. The firmware needs no libraries.
 
-`pov_strip/config.h` holds the hardware facts: chip (`POV_CHIP`, WS2812B by default), data pin (GPIO4 = D4 on a DevKit), clock pin for clocked chips, LEDs per meter, length. Change those, reflash. Everything else changes live.
+The hardware facts (chip, data GPIO, clock GPIO, LEDs per meter, length) come from the Studio's Chip and Pins controls: the Flash button writes them to `pov_strip/config_local.h` (not in git) and builds with it. `povstrip flash --chip WS2812B --data 5` does the same from the command line; `pov_strip/config.h` holds the defaults for the Arduino IDE route. Change any of those, reflash. Everything else changes live.
 
 ## Every day
 

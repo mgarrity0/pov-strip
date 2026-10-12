@@ -70,8 +70,79 @@ def ensure_core(cli: list[str], log=print) -> None:
         run(cli + ["core", "install", "esp32:esp32", "--additional-urls", ESP32_INDEX], log)
 
 
-def flash(board: str, serial_port: str | None, build_only: bool = False, huge: bool | None = None, log=print) -> None:
+LOCAL = SKETCH / "config_local.h"
+CHIPS = ("APA102", "SK9822", "HD107S", "WS2812B", "WS2812B_V5", "SK6812", "WS2811", "WS2813", "WS2815")
+MODES = {"full": "RENDER_FULL", "safe": "RENDER_PWM_SAFE", "current": "RENDER_CURRENT"}
+
+
+def local_config_text(cfg: dict) -> str:
+    """config_local.h from the Studio's chip / pins / defaults. Unknown keys are ignored,
+    bad values raise ValueError. Values not given keep config.h's defaults."""
+    out = ["// config_local.h - written by povstrip from the Studio's Chip and Pins controls.",
+           "// Overrides config.h; not tracked by git. Delete it to go back to the defaults.", "#pragma once"]
+
+    def num(key, lo, hi, kind=int):
+        if key not in cfg or cfg[key] in (None, ""):
+            return None
+        v = kind(cfg[key])
+        if not (lo <= v <= hi):
+            raise ValueError(f"{key} out of range: {v}")
+        return v
+
+    chip = cfg.get("chip")
+    if chip:
+        chip = str(chip).upper().replace("-", "_")
+        if chip not in CHIPS:
+            raise ValueError(f"unknown chip {chip}")
+        out.append(f"#define POV_CHIP LED_{chip}")
+    for key, macro, lo, hi, kind, fmt in (
+        ("pinData", "POV_PIN_DATA", 0, 48, int, "{}"),
+        ("pinClock", "POV_PIN_CLOCK", 0, 48, int, "{}"),
+        ("lengthM", "POV_LENGTH_M", 0.05, 100, float, "{:.2f}f"),
+        ("density", "POV_LEDS_PER_M", 1, 1000, int, "{}"),
+        ("numLedsMax", "POV_NUM_LEDS_MAX", 1, 10000, int, "{}"),
+        ("spiMHz", "POV_SPI_MHZ", 0.1, 40, float, "{:g}"),
+        ("bri", "POV_BRIGHTNESS", 0, 255, int, "{}"),
+        ("gamma", "POV_GAMMA", 0.5, 5, float, "{:.2f}f"),
+    ):
+        v = num(key, lo, hi, kind)
+        if v is not None:
+            out.append(f"#define {macro} " + fmt.format(v))
+    if "dataInAtBottom" in cfg:
+        out.append(f"#define POV_DATA_IN_AT_BOTTOM {1 if cfg['dataInAtBottom'] else 0}")
+    order = cfg.get("order")
+    if order:
+        order = str(order).upper()
+        if len(order) != 3 or set(order) != {"R", "G", "B"}:
+            raise ValueError(f"bad color order {order}")
+        macro = "POV_CLOCKED_ORDER" if (chip or "WS2812B") in ("APA102", "SK9822", "HD107S") else "POV_SINGLE_ORDER"
+        out.append(f'#define {macro} "{order}"')
+    mode = cfg.get("mode")
+    if mode:
+        if mode not in MODES:
+            raise ValueError(f"bad render mode {mode}")
+        out.append(f"#define POV_RENDER {MODES[mode]}")
+    return "\n".join(out) + "\n"
+
+
+def write_local_config(cfg: dict | None, log=print) -> None:
+    """cfg None: leave config_local.h as it is. {}: remove it (config.h defaults)."""
+    if cfg is None:
+        return
+    if not cfg:
+        if LOCAL.exists():
+            LOCAL.unlink()
+            log("removed config_local.h: config.h defaults")
+        return
+    text = local_config_text(cfg)
+    LOCAL.write_text(text, encoding="utf-8")
+    log("config_local.h: " + "; ".join(l[8:] for l in text.splitlines() if l.startswith("#define")))
+
+
+def flash(board: str, serial_port: str | None, build_only: bool = False, huge: bool | None = None, log=print,
+          config: dict | None = None) -> None:
     cli = find_cli()
+    write_local_config(config, log)
     if board not in BOARDS:
         raise SystemExit(f"board must be one of {', '.join(BOARDS)}")
     fqbn, opts = BOARDS[board]
@@ -87,5 +158,7 @@ def flash(board: str, serial_port: str | None, build_only: bool = False, huge: b
             raise SystemExit("pass --serial PORT to upload (povstrip ports lists them)")
         cmd += ["--upload", "-p", serial_port]
     cmd.append(str(SKETCH))
+    if LOCAL.exists() and config is None:
+        log("using " + LOCAL.name + ": " + "; ".join(l[8:] for l in LOCAL.read_text(encoding="utf-8").splitlines() if l.startswith("#define")))
     run(cmd, log)
     log("done" if build_only else "flashed; the strip reboots with the new firmware")

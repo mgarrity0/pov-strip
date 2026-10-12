@@ -474,10 +474,11 @@ static void showTest() {
 static void printInfo() {
   const PovImage &im = g_cur;
   const uint32_t minUs = ledout::minColUs();
-  Serial.printf("\n-- POV strip %s --\nchip %s (%s)", POV_VERSION, ledout::chipName(),
-                LED_IS_CLOCKED(POV_CHIP) ? "clocked" : "single-wire");
+  Serial.printf("\n-- POV strip %s --\nchip %s (%s), data GPIO%d", POV_VERSION, ledout::chipName(),
+                LED_IS_CLOCKED(POV_CHIP) ? "clocked" : "single-wire", (int)POV_PIN_DATA);
 #if LED_IS_CLOCKED(POV_CHIP)
-  Serial.printf(", SPI %.2f MHz asked, %.2f MHz actual", S.spiMHz, ledout::actualHz() / 1e6);
+  Serial.printf(", clock GPIO%d, SPI %.2f MHz asked, %.2f MHz actual", (int)POV_PIN_CLOCK, S.spiMHz,
+                ledout::actualHz() / 1e6);
 #endif
   Serial.printf("\nstrip %.2f m x %u/m = %u LEDs (max %u)\n", S.lengthM, S.density, g_n,
                 (unsigned)POV_NUM_LEDS_MAX);

@@ -1512,8 +1512,13 @@ async function devInit() {
     if (ping.fake) { devLog("simulated strip: nothing to flash"); return; }
     $("devFlash").disabled = true; $("devConnect").disabled = true;
     devState(false, false, "flashing");
-    devLog("building and uploading the firmware to " + port + " (the strip goes dark until it reboots)", true);
-    try { await api("/api/flash", { port, board: $("devBoard").value }); clearTimeout(flashTimer); flashTimer = setTimeout(pollFlash, 1500); }
+    flushRefresh();
+    const config = { chip: st.chip, pinData: +st.pinData, pinClock: +st.pinClock, lengthM: +st.lengthM, density: +st.density,
+      numLedsMax: Math.max(720, D.n), dataInAtBottom: !!st.dataBottom, spiMHz: +st.spiMHz, order: st.order,
+      bri: +st.bri, gamma: +st.gamma, mode: st.mode };
+    devLog(`building and uploading the firmware to ${port}: ${POV.CHIPS[st.chip].label}, data GPIO${st.pinData}` +
+      `${POV.CHIPS[st.chip].clocked ? `, clock GPIO${st.pinClock}` : ""}, ${st.lengthM} m x ${st.density}/m (the strip goes dark until it reboots)`, true);
+    try { await api("/api/flash", { port, board: $("devBoard").value, config }); clearTimeout(flashTimer); flashTimer = setTimeout(pollFlash, 1500); }
     catch (e) { devLog("flash: " + e.message); $("devFlash").disabled = false; $("devConnect").disabled = false; }
   });
   $("devConnect").addEventListener("click", async () => {

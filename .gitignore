@@ -9,3 +9,4 @@ tools/check_resampler/*.bin
 tools/check_resampler/resample_extract.inc
 *.pov
 .venv/
+pov_strip/config_local.h

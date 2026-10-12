@@ -36,7 +36,10 @@ def cmd_serve(args):
 
 def cmd_flash(args):
     from .flash import flash
-    flash(args.board, args.serial, build_only=args.build_only, huge=(False if args.default_partition else None))
+    cfg = {k: v for k, v in (("chip", args.chip), ("pinData", args.data), ("pinClock", args.clock),
+                             ("lengthM", args.len), ("density", args.dens)) if v is not None}
+    flash(args.board, args.serial, build_only=args.build_only, huge=(False if args.default_partition else None),
+          config=({} if args.defaults else cfg or None))
 
 
 def cmd_info(args):
@@ -162,6 +165,12 @@ def main(argv=None):
     f.add_argument("--board", default="esp32dev", choices=["esp32dev", "xiao_esp32s3", "esp32s3_devkitc"])
     f.add_argument("--build-only", action="store_true")
     f.add_argument("--default-partition", action="store_true", help="keep the 1.25 MB app partition (Huge APP otherwise)")
+    f.add_argument("--chip", help="LED chip, e.g. WS2812B or APA102 (writes pov_strip/config_local.h)")
+    f.add_argument("--data", type=int, help="data GPIO number")
+    f.add_argument("--clock", type=int, help="clock GPIO number (clocked chips)")
+    f.add_argument("--len", type=float, help="default strip length m")
+    f.add_argument("--dens", type=int, help="default LEDs per meter")
+    f.add_argument("--defaults", action="store_true", help="remove config_local.h and build config.h's defaults")
     f.set_defaults(fn=cmd_flash)
     sub.add_parser("info", help="numbers for the current setup").set_defaults(fn=cmd_info)
     sub.add_parser("ls", help="images stored on the strip").set_defaults(fn=cmd_ls)

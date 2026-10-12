@@ -5,7 +5,7 @@
 
 API (JSON): GET /api/ping, GET /api/ports, GET /api/status, POST /api/connect {port},
 POST /api/disconnect, POST /api/cmd {text}, POST /api/put {slot, header, rgb_b64},
-POST /api/wipe, GET /api/ls, GET /api/info, POST /api/flash {port, board},
+POST /api/wipe, GET /api/ls, GET /api/info, POST /api/flash {port, board, config?},
 GET /api/flash/status, GET /api/log, POST /api/quit
 
 The Studio page is re-read from disk whenever it changes, so a `git pull` shows up on
@@ -82,7 +82,7 @@ class Bridge:
         return self.dev
 
     # ---- firmware flashing (arduino-cli) in a background thread ----
-    def start_flash(self, port: str, board: str) -> None:
+    def start_flash(self, port: str, board: str, config: Optional[dict] = None) -> None:
         if self.fake:
             raise DeviceError("simulated strip: nothing to flash")
         st = self.flash_state
@@ -96,7 +96,7 @@ class Bridge:
         def work():
             from .flash import flash
             try:
-                flash(board, port, log=lambda line: st["lines"].append(line))
+                flash(board, port, log=lambda line: st["lines"].append(line), config=config)
                 st["ok"] = True
             except BaseException as e:  # SystemExit from flash() too
                 st["lines"].append(f"error: {e}")
@@ -193,7 +193,9 @@ def make_handler(bridge: Bridge, quit_event: threading.Event):
                     quit_event.set()
                     return
                 if self.path == "/api/flash":
-                    bridge.start_flash(str(body.get("port", "")), str(body.get("board", "esp32dev")))
+                    cfg = body.get("config")
+                    bridge.start_flash(str(body.get("port", "")), str(body.get("board", "esp32dev")),
+                                       cfg if isinstance(cfg, dict) else None)
                     return self._json({"ok": True})
                 if self.path == "/api/cmd":
                     with bridge.lock:
