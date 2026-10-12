@@ -31,6 +31,8 @@ povstrip serve
 
 opens the Studio in your browser with a "Strip over USB" panel: pick the port, Connect, tick the slides you want, **Send ticked slides to strip**. The page takes the strip's chip, length and density from the board when it connects, so the preview matches what is plugged in. Nothing is recompiled; the strip starts playing the new images as they arrive and keeps them across power cycles.
 
+Preview: Glance and Shake simulate what the eye sees; **Strip** shows the line itself playing its columns at the playback speed (a 60 Hz screen merges columns shorter than a frame). At 1/20 speed you can sweep your own eyes across it at about 15°/s and see the picture, the same mechanism slowed down 20x.
+
 Live tuning: once connected, the "Live on the strip" sliders (sweep speed, dark gap, brightness, direction) change the strip as you drag, no re-upload. Sweep speed is how fast the strip crosses your eye; the slides were made for the Eye speed in the design controls (300°/s by default, a glance). For a head shake set it lower: ±8° at 2 Hz peaks near 100°/s. The firmware stretches each pass and the gap by design/actual so the picture keeps its width. Apply strip settings or Send saves the values on the strip.
 
 Without hardware: `povstrip serve --fake` simulates a strip.

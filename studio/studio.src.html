@@ -230,6 +230,7 @@ tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transf
             <button class="fbtn primary" id="bGlanceR" type="button">Glance &rarr;</button>
             <button class="fbtn" id="bGlanceL" type="button">&larr; Glance</button>
             <button class="fbtn" id="bShake" type="button" aria-pressed="false">Shake</button>
+            <button class="fbtn" id="bStrip" type="button" aria-pressed="false" title="The strip itself, playing its columns">Strip</button>
           </div>
         </div>
         <canvas id="field" height="320" role="img" aria-label="Simulated view of the strip during a glance"></canvas>
@@ -705,6 +706,7 @@ let view = null;         // geometry for the current canvas
 let acc = null;          // Float32Array accumulation
 let anim = null;         // running animation
 let shaking = false;
+let stripping = false;   // "Strip" view: the line itself playing its columns
 
 function layoutField() {
   const r = rendered[st.sel];
@@ -830,7 +832,7 @@ function stopAnim() { if (anim) cancelAnimationFrame(anim.raf); anim = null; }
 
 // Static frame: a complete centred glance, plus the strip at rest at both ends.
 function renderStill(dirSign = 1, phase = null) {
-  stopAnim(); setShake(false);
+  stopAnim(); setShake(false); setStrip(false);
   layoutField();
   const dur = glanceMs() * 1000;
   const rAt = POV.glancePath(st.glanceDeg, glanceMs(), dirSign, st.profile);
@@ -841,7 +843,7 @@ function renderStill(dirSign = 1, phase = null) {
 }
 
 function playGlance(dirSign) {
-  stopAnim(); setShake(false);
+  stopAnim(); setShake(false); setStrip(false);
   layoutField();
   const dur = glanceMs() * 1000;
   const rAt = POV.glancePath(st.glanceDeg, glanceMs(), dirSign, st.profile);
@@ -869,7 +871,7 @@ function setShake(on) {
   $("bShake").textContent = on ? "Stop" : "Shake";
 }
 function playShake() {
-  stopAnim(); setShake(true);
+  stopAnim(); setStrip(false); setShake(true);
   layoutField();
   const rAt = POV.shakePath(st.shakeDeg, st.shakeHz);
   const P = simParams(rAt, 0);
@@ -888,6 +890,75 @@ function playShake() {
     if (shaking) anim.raf = requestAnimationFrame(tick);
   };
   anim.raf = requestAnimationFrame(tick);
+}
+
+// ---------------------------------------------------------------- the strip itself
+function setStrip(on) {
+  stripping = on;
+  $("bStrip").setAttribute("aria-pressed", on ? "true" : "false");
+  $("bStrip").textContent = on ? "Stop" : "Strip";
+}
+// One line of LEDs playing the selected slide's columns at the playback speed, as a
+// camera or a steady eye sees it. Columns shorter than a screen frame average
+// together (a 60 Hz screen cannot flash faster than that). Sweeping the eye across
+// the line at sweep speed x playback speed paints the picture the way the real
+// strip does, slowed down by the same factor.
+function playStrip() {
+  stopAnim(); setShake(false); setStrip(true);
+  layoutField();
+  const r = rendered[st.sel];
+  const dir = dirCode(), G = gapUs(), colUs = D.colUs;
+  const period = POV.cycle(dir, r.cols, colUs, G).periodUs;
+  let t = Math.random() * period, last = performance.now();
+  const sum = new Float32Array(r.rows * 3);
+  let capAt = 0;
+  anim = { raf: 0 };
+  const tick = (now) => {
+    const slow = +$("slowmo").value;
+    const adv = Math.min(50, now - last) * 1000 * slow;   // strip time covered by this frame, us
+    last = now;
+    const ns = Math.max(1, Math.min(48, Math.ceil(adv / (colUs / 2))));
+    sum.fill(0);
+    for (let s = 0; s < ns; s++) {
+      const c = POV.columnAt(t + (s + 0.5) * adv / ns, dir, r.cols, colUs, G);
+      if (c < 0) continue;
+      for (let i = 0; i < r.rows; i++) {
+        const pi = c * r.rows + i, lv = r.level[pi];
+        sum[i * 3] += r.duty[pi * 3] * lv; sum[i * 3 + 1] += r.duty[pi * 3 + 1] * lv; sum[i * 3 + 2] += r.duty[pi * 3 + 2] * lv;
+      }
+    }
+    t += adv;
+    acc.fill(0);
+    drawField((g) => drawStripLine(g, sum, 1 / ns));
+    if (now - capAt > 500) {
+      capAt = now;
+      const perFrame = 16667 * slow / colUs;
+      const eye = st.sweepDps * slow;
+      $("fieldCap").innerHTML = `<b>The strip itself</b> at ${slow === 1 ? "real time" : "1/" + Math.round(1 / slow) + " speed"}: ` +
+        `${r.cols} columns of ${fmt.us(colUs)}, gap ${fmt.ms(G / 1000)}, ${({ ltr: "left to right", rtl: "right to left", alt: "alternating", pal: "both ways" })[st.dir] || st.dir} · ` +
+        (perFrame > 1.2 ? `a 60 Hz screen merges ${perFrame.toFixed(1)} columns per frame; slow the playback to see them`
+                        : `sweep your eyes across it at about ${eye >= 10 ? Math.round(eye) : eye.toFixed(1)}°/s to paint the picture`);
+    }
+    if (stripping) anim.raf = requestAnimationFrame(tick);
+  };
+  anim.raf = requestAnimationFrame(tick);
+}
+function drawStripLine(g, sum, k) {
+  const { W, H, dpr, rowLed } = view;
+  const w = Math.max(3 * dpr, Math.round(0.08 * view.pxPerDeg)), x = Math.round(W / 2 - w / 2);
+  g.fillStyle = "#101010";
+  g.fillRect(x - dpr, 0, w + 2 * dpr, H);   // the strip's body, so dark LEDs still show where it is
+  let prev = -2;
+  for (let y = 0; y < H; y++) {
+    const row = rowLed[y];
+    if (row < 0) continue;
+    if (row !== prev) {   // first canvas row of this LED
+      prev = row;
+      const f = (v) => Math.round(255 * Math.pow(Math.min(1, v * k), 1 / 2.2));
+      g.fillStyle = `rgb(${f(sum[row * 3])},${f(sum[row * 3 + 1])},${f(sum[row * 3 + 2])})`;
+    }
+    g.fillRect(x, y, w, 1);
+  }
 }
 
 // ---------------------------------------------------------------- numbers
@@ -1172,6 +1243,7 @@ for (const name of ["profile", "dir", "mode"]) {
 $("bGlanceR").addEventListener("click", () => playGlance(1));
 $("bGlanceL").addEventListener("click", () => playGlance(-1));
 $("bShake").addEventListener("click", () => { if (shaking) { setShake(false); stopAnim(); renderStill(1); } else playShake(); });
+$("bStrip").addEventListener("click", () => { if (stripping) { setStrip(false); stopAnim(); renderStill(1); } else playStrip(); });
 
 function syncOutputs() {
   $("lenOut").textContent = `${st.lengthM.toFixed(2)} m`;
@@ -1555,6 +1627,7 @@ function refresh(resim = true) {
   renderNumbers();
   updatePreview();
   if (shaking) playShake();
+  else if (stripping) playStrip();
   else renderStill(1);
 }
 
@@ -1565,6 +1638,6 @@ if (document.fonts && document.fonts.ready) {
   Promise.all(fams.map((f) => document.fonts.load(f).catch(() => null))).then(() => { rebuild = true; refresh(); });
 }
 let rz = 0;
-window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (!shaking) renderStill(1); }, 120); });
+window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (!shaking && !stripping) renderStill(1); }, 120); });
 })();
 </script>
