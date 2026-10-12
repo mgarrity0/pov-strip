@@ -5,14 +5,22 @@
 
 API (JSON): GET /api/ping, GET /api/ports, GET /api/status, POST /api/connect {port},
 POST /api/disconnect, POST /api/cmd {text}, POST /api/put {slot, header, rgb_b64},
-POST /api/wipe, GET /api/ls, GET /api/info
+POST /api/wipe, GET /api/ls, GET /api/info, POST /api/flash {port, board},
+GET /api/flash/status, GET /api/log, POST /api/quit
+
+The Studio page is re-read from disk whenever it changes, so a `git pull` shows up on
+the next reload without restarting. A second `povstrip serve` asks the running one to
+quit and takes its port; if that fails it moves to the next free port.
 """
 from __future__ import annotations
 
 import base64
 import json
 import os
+import socket
 import threading
+import time
+import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -99,8 +107,25 @@ class Bridge:
         threading.Thread(target=work, daemon=True).start()
 
 
-def make_handler(bridge: Bridge):
-    page = STUDIO.read_bytes() if STUDIO.exists() else b"<p>studio/pov-strip-studio.html is missing; run python3 tools/build_studio.py</p>"
+class _Page:
+    """The Studio page, re-read when its file changes."""
+
+    def __init__(self):
+        self.mtime = None
+        self.data = b""
+
+    def get(self) -> bytes:
+        try:
+            m = STUDIO.stat().st_mtime_ns
+        except OSError:
+            return b"<p>studio/pov-strip-studio.html is missing; run python3 tools/build_studio.py</p>"
+        if m != self.mtime:
+            self.data, self.mtime = STUDIO.read_bytes(), m
+        return self.data
+
+
+def make_handler(bridge: Bridge, quit_event: threading.Event):
+    page = _Page()
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):  # quiet
@@ -121,12 +146,13 @@ def make_handler(bridge: Bridge):
 
         def do_GET(self):
             if self.path in ("/", "/index.html"):
+                body = page.get()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(page)))
+                self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
-                self.wfile.write(page)
+                self.wfile.write(body)
                 return
             try:
                 if self.path == "/api/ping":
@@ -162,6 +188,10 @@ def make_handler(bridge: Bridge):
                 if self.path == "/api/disconnect":
                     bridge.disconnect()
                     return self._json({"ok": True})
+                if self.path == "/api/quit":
+                    self._json({"ok": True})
+                    quit_event.set()
+                    return
                 if self.path == "/api/flash":
                     bridge.start_flash(str(body.get("port", "")), str(body.get("board", "esp32dev")))
                     return self._json({"ok": True})
@@ -190,8 +220,47 @@ def make_handler(bridge: Bridge):
     return H
 
 
+def _port_free(host: str, port: int) -> bool:
+    """Nothing accepts connections on the port. (A bind probe would pass on Windows even
+    while another process listens, because HTTPServer sets SO_REUSEADDR.)"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex((host, port)) != 0
+
+
+def _retire_old_server(host: str, port: int) -> bool:
+    """If a povstrip server answers on the port, ask it to quit. True when the port is free."""
+    base = f"http://{host}:{port}"
+    try:
+        with urllib.request.urlopen(base + "/api/ping", timeout=1.5) as r:
+            info = json.loads(r.read() or b"{}")
+    except Exception:
+        return False
+    if not (isinstance(info, dict) and info.get("ok") and "version" in info):
+        return False
+    print(f"povstrip {info.get('version')} is already serving on port {port}: asking it to quit")
+    try:
+        req = urllib.request.Request(base + "/api/quit", data=b"{}", method="POST",
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=1.5).read()
+    except Exception:
+        print("  it predates /api/quit; close its window to free the port")
+        return False
+    for _ in range(40):
+        if _port_free(host, port):
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def serve(host: str = "127.0.0.1", port: int = 8765, fake: bool = False, open_browser: bool = True,
           serial_port: Optional[str] = None) -> None:
+    if not _port_free(host, port) and not _retire_old_server(host, port):
+        p = port
+        while not _port_free(host, p):
+            p += 1
+        print(f"port {port} is busy: using {p}")
+        port = p
     bridge = Bridge(fake=fake)
     if serial_port or fake:
         try:
@@ -199,11 +268,13 @@ def serve(host: str = "127.0.0.1", port: int = 8765, fake: bool = False, open_br
             print(f"connected to {bridge.port}")
         except Exception as e:
             print(f"not connected yet ({e}); use the Connect button in the page")
-    httpd = ThreadingHTTPServer((host, port), make_handler(bridge))
+    quit_event = threading.Event()
+    httpd = ThreadingHTTPServer((host, port), make_handler(bridge, quit_event))
     url = f"http://{host}:{port}/"
     print(f"POV Strip Studio at {url}  (Ctrl-C to stop)")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    threading.Thread(target=lambda: (quit_event.wait(), httpd.shutdown()), daemon=True).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -213,3 +284,5 @@ def serve(host: str = "127.0.0.1", port: int = 8765, fake: bool = False, open_br
         if bridge.fake:
             bridge.fake.close()
         httpd.server_close()
+        if quit_event.is_set():
+            print("stopped: another povstrip serve took over")

@@ -1214,6 +1214,7 @@ function updatePreview() {
   }, 60);
 }
 $("bCopy").addEventListener("click", () => {
+  flushRefresh();
   if (!exported().length) return;
   const txt = headerText();
   const note = $("exportNote");
@@ -1371,10 +1372,12 @@ async function devInit() {
     }
   }
   $("devApply").addEventListener("click", () => devRun("applying settings", async () => {
+    flushRefresh();
     await sendSettings();
     const info = await api("/api/info"); devLog(info.lines, true); devLog("settings saved on the strip");
   }));
   $("devSend").addEventListener("click", () => devRun("sending", async () => {
+    flushRefresh();
     const ex = exported();
     if (!ex.length) { devLog("tick at least one slide"); return; }
     const prog = $("devProg"); prog.hidden = false; prog.firstElementChild.style.width = "0%";
@@ -1399,6 +1402,7 @@ async function devInit() {
 }
 devInit();
 $("bZip").addEventListener("click", async () => {
+  flushRefresh();
   const note = $("exportNote");
   if (!downloads || !exported().length) return;
   const files = [];
@@ -1422,11 +1426,17 @@ $("bZip").addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------------- refresh
-let refreshQueued = false, rebuild = true;
+let refreshQueued = false, rebuild = true, refreshRaf = 0;
 function changed(resim = true) {
   save();
   rebuild = true;
-  if (!refreshQueued) { refreshQueued = true; requestAnimationFrame(() => { refreshQueued = false; refresh(resim); }); }
+  if (!refreshQueued) { refreshQueued = true; refreshRaf = requestAnimationFrame(() => { refreshQueued = false; refresh(resim); }); }
+}
+// requestAnimationFrame does not run while the tab is hidden, so anything that
+// uploads or exports from D / rendered flushes a pending refresh first.
+function flushRefresh() {
+  if (!refreshQueued) return;
+  cancelAnimationFrame(refreshRaf); refreshQueued = false; refresh(true);
 }
 function refresh(resim = true) {
   syncOutputs();

@@ -33,6 +33,8 @@ opens the Studio in your browser with a "Strip over USB" panel: pick the port, C
 
 Without hardware: `povstrip serve --fake` simulates a strip.
 
+Updating: `git pull`, then start `povstrip serve` (or `serve.cmd`) again; it asks the server that is still running to quit and takes its port. The page itself is re-read from disk on every reload, firmware changes need the Flash button, Python changes need that restart.
+
 Command line:
 
 ```
