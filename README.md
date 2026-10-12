@@ -13,10 +13,13 @@ cd pov-strip
 
 Then use the launcher, which makes its own Python environment the first time: `povstrip.cmd ...` on Windows (ports are `COM5` style), `./povstrip.sh ...` on macOS/Linux. The commands below are written as `povstrip ...`; prefix accordingly. (`pip install -e .` also works if you prefer a global `povstrip` command.) `povstrip ports` lists serial ports.
 
-Firmware, either way:
+Firmware, any of these:
 
-- `povstrip flash --serial COM5` (or `/dev/cu.usbserial-XXXX`). Uses arduino-cli from PATH or the copy inside Arduino IDE 2, and installs the esp32 core and FastLED itself the first time.
+- The **Flash firmware** button in the Studio's "Strip over USB" panel (`povstrip serve`, or double-click `serve.cmd` on Windows).
+- `povstrip flash --serial COM5` (or `/dev/cu.usbserial-XXXX`).
 - Arduino IDE: open `pov_strip/pov_strip.ino`, board "ESP32 Dev Module", upload. The Arduino IDE section below has the details.
+
+The first two use arduino-cli from PATH or the copy inside Arduino IDE 2, and install the esp32 core and FastLED themselves if missing.
 
 `pov_strip/config.h` holds the hardware facts: chip (`POV_CHIP`, WS2812B by default), data pin (GPIO4 = D4 on a DevKit), clock pin for clocked chips, LEDs per meter, length. Change those, reflash. Everything else changes live.
 

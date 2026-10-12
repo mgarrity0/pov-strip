@@ -31,6 +31,7 @@ class Bridge:
         self.port = ""
         self.fake = None
         self.log: list[str] = []
+        self.flash_state: dict = {"running": False, "ok": None, "lines": [], "port": "", "board": ""}
         if fake:
             from .fakedev import FakeDevice
             self.fake = FakeDevice()
@@ -71,6 +72,31 @@ class Bridge:
         if not self.dev:
             raise DeviceError("not connected")
         return self.dev
+
+    # ---- firmware flashing (arduino-cli) in a background thread ----
+    def start_flash(self, port: str, board: str) -> None:
+        if self.fake:
+            raise DeviceError("simulated strip: nothing to flash")
+        st = self.flash_state
+        if st["running"]:
+            raise DeviceError("a flash is already running")
+        if not port:
+            raise DeviceError("pick the serial port first")
+        self.disconnect()  # the upload needs the port
+        st.update(running=True, ok=None, lines=[], port=port, board=board)
+
+        def work():
+            from .flash import flash
+            try:
+                flash(board, port, log=lambda line: st["lines"].append(line))
+                st["ok"] = True
+            except BaseException as e:  # SystemExit from flash() too
+                st["lines"].append(f"error: {e}")
+                st["ok"] = False
+            finally:
+                st["running"] = False
+
+        threading.Thread(target=work, daemon=True).start()
 
 
 def make_handler(bridge: Bridge):
@@ -117,6 +143,10 @@ def make_handler(bridge: Bridge):
                         return self._json({"ok": True, "lines": bridge.require().info()})
                 if self.path == "/api/log":
                     return self._json({"ok": True, "lines": bridge.log[-60:]})
+                if self.path == "/api/flash/status":
+                    st = bridge.flash_state
+                    return self._json({"ok": True, "running": st["running"], "result": st["ok"], "lines": st["lines"][-80:],
+                                       "count": len(st["lines"]), "port": st["port"], "board": st["board"]})
             except DeviceError as e:
                 return self._json({"ok": False, "error": str(e)})
             except Exception as e:  # serial errors etc.
@@ -131,6 +161,9 @@ def make_handler(bridge: Bridge):
                     return self._json({"ok": True, "port": bridge.port, "banner": banner})
                 if self.path == "/api/disconnect":
                     bridge.disconnect()
+                    return self._json({"ok": True})
+                if self.path == "/api/flash":
+                    bridge.start_flash(str(body.get("port", "")), str(body.get("board", "esp32dev")))
                     return self._json({"ok": True})
                 if self.path == "/api/cmd":
                     with bridge.lock:

@@ -395,6 +395,15 @@ tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transf
         <span class="live" id="devLive"><i></i><span>not connected</span></span>
       </div>
       <div class="actions">
+        <select id="devBoard" aria-label="Board to flash" style="width:auto">
+          <option value="esp32dev">ESP32 Dev Module</option>
+          <option value="xiao_esp32s3">XIAO ESP32S3</option>
+          <option value="esp32s3_devkitc">ESP32-S3 DevKitC</option>
+        </select>
+        <button class="btn" type="button" id="devFlash">Flash firmware</button>
+        <span class="note" id="devFlashNote">First time, or after editing config.h. Uses Arduino IDE's arduino-cli; 1 to 5 minutes.</span>
+      </div>
+      <div class="actions">
         <button class="btn primary" type="button" id="devSend" disabled>Send ticked slides to strip</button>
         <button class="btn" type="button" id="devApply" disabled>Apply strip settings</button>
         <button class="btn" type="button" id="devTest" disabled>Test frame</button>
@@ -1259,6 +1268,7 @@ async function devPorts() {
   const sel = $("devPort"), prev = sel.value;
   sel.innerHTML = j.ports.map((p) => `<option value="${escapeHtml(p.device)}">${escapeHtml(p.device)}${p.description ? "  " + escapeHtml(p.description) : ""}</option>`).join("") || "<option value=\"\">no serial ports found</option>";
   if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+  else if (j.ports.length) sel.value = j.ports[0].device;   // ports come sorted best first
 }
 // The strip knows what it is: take its chip, length and density into the page.
 function syncFromDevice(lines) {
@@ -1306,6 +1316,28 @@ async function devInit() {
     if (s.connected) { $("devPort").value = s.port; devState(true, false, `connected, ${s.port}`); }
   } catch (e) { /* ignore */ }
   $("devRefresh").addEventListener("click", () => devPorts().catch((e) => devLog("ports: " + e.message)));
+  $("devBoard").value = st.board === "xiao" ? "xiao_esp32s3" : st.board === "s3devkit" ? "esp32s3_devkitc" : "esp32dev";
+  let flashTimer = 0;
+  async function pollFlash() {
+    try {
+      const j = await api("/api/flash/status");
+      devLog(j.lines.slice(-25), true);
+      if (j.running) { flashTimer = setTimeout(pollFlash, 1200); return; }
+      $("devFlash").disabled = false; $("devConnect").disabled = false;
+      if (j.result) { devLog("flashed. Connecting..."); setTimeout(() => $("devConnect").click(), 2500); }
+      else devLog("flash failed; the log above says why");
+    } catch (e) { devLog("flash status: " + e.message); $("devFlash").disabled = false; $("devConnect").disabled = false; }
+  }
+  $("devFlash").addEventListener("click", async () => {
+    const port = $("devPort").value;
+    if (!port) { devLog("pick the strip's serial port first"); return; }
+    if (ping.fake) { devLog("simulated strip: nothing to flash"); return; }
+    $("devFlash").disabled = true; $("devConnect").disabled = true;
+    devState(false, false, "flashing");
+    devLog("building and uploading the firmware to " + port + " (the strip goes dark until it reboots)", true);
+    try { await api("/api/flash", { port, board: $("devBoard").value }); clearTimeout(flashTimer); flashTimer = setTimeout(pollFlash, 1500); }
+    catch (e) { devLog("flash: " + e.message); $("devFlash").disabled = false; $("devConnect").disabled = false; }
+  });
   $("devConnect").addEventListener("click", async () => {
     if (dev.connected) {
       try { await api("/api/disconnect", {}); } catch (e) { /* ignore */ }

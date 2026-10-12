@@ -51,20 +51,27 @@ def find_cli() -> list[str]:
     )
 
 
-def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
-    print("$", " ".join(cmd), flush=True)
-    return subprocess.run(cmd, check=check)
+def run(cmd: list[str], log=print) -> None:
+    """Runs a command, streaming its output lines to `log`. Raises on failure."""
+    log("$ " + " ".join(cmd))
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        log(line.rstrip("\n"))
+    if proc.wait() != 0:
+        raise RuntimeError(f"{os.path.basename(cmd[0])} {cmd[1] if len(cmd) > 1 else ''} failed (exit {proc.returncode})")
 
 
-def ensure_core_and_libs(cli: list[str], single_wire: bool) -> None:
+def ensure_core_and_libs(cli: list[str], single_wire: bool, log=print) -> None:
     cores = subprocess.run(cli + ["core", "list", "--format", "json"], capture_output=True, text=True)
     if "esp32:esp32" not in cores.stdout:
-        run(cli + ["core", "update-index", "--additional-urls", ESP32_INDEX])
-        run(cli + ["core", "install", "esp32:esp32", "--additional-urls", ESP32_INDEX])
+        log("esp32 core not installed: installing (a few minutes, ~1 GB)")
+        run(cli + ["core", "update-index", "--additional-urls", ESP32_INDEX], log)
+        run(cli + ["core", "install", "esp32:esp32", "--additional-urls", ESP32_INDEX], log)
     if single_wire:
         libs = subprocess.run(cli + ["lib", "list", "FastLED", "--format", "json"], capture_output=True, text=True)
         if "FastLED" not in libs.stdout:
-            run(cli + ["lib", "install", "FastLED"])
+            run(cli + ["lib", "install", "FastLED"], log)
 
 
 def chip_is_single_wire() -> bool:
@@ -75,14 +82,15 @@ def chip_is_single_wire() -> bool:
     return True
 
 
-def flash(board: str, serial_port: str | None, build_only: bool = False, huge: bool | None = None) -> None:
+def flash(board: str, serial_port: str | None, build_only: bool = False, huge: bool | None = None, log=print) -> None:
     cli = find_cli()
     if board not in BOARDS:
         raise SystemExit(f"board must be one of {', '.join(BOARDS)}")
     fqbn, opts = BOARDS[board]
     if huge is False:
         opts = ""
-    ensure_core_and_libs(cli, chip_is_single_wire())
+    log(f"arduino-cli: {cli[0]}")
+    ensure_core_and_libs(cli, chip_is_single_wire(), log)
     cmd = cli + ["compile", "--fqbn", fqbn]
     if opts:
         cmd += ["--board-options", opts]
@@ -91,5 +99,5 @@ def flash(board: str, serial_port: str | None, build_only: bool = False, huge: b
             raise SystemExit("pass --serial PORT to upload (povstrip ports lists them)")
         cmd += ["--upload", "-p", serial_port]
     cmd.append(str(SKETCH))
-    run(cmd)
-    print("done" if build_only else "flashed; run `povstrip serve` or `povstrip info`")
+    run(cmd, log)
+    log("done" if build_only else "flashed; the strip reboots with the new firmware")
