@@ -85,7 +85,7 @@ class FakeDevice:
             self.path = os.ttyname(slave)
         self.store: dict[int, bytes] = {}
         self.settings: dict[str, str] = {"len": "2.00", "dens": "60", "bri": "255", "gamma": "2.40", "mode": "full",
-                                         "dir": "img", "col": "0", "gap": "img", "auto": "on", "speed": "img"}
+                                         "dir": "img", "col": "0", "gap": "img", "auto": "on", "speed": "img", "amps": "0"}
         self.current = 1
         self.test = False
         self.commands: list[str] = []
@@ -157,6 +157,7 @@ class FakeDevice:
                     f"column 3905 us (256 Hz); 16 columns per pass = 62.5 ms; gap "
                     f"{'20.9 ms (image)' if self.settings['gap'] == 'img' else f'{int(self.settings["gap"]) / 1000:.1f} ms'}\n"
                     f"sweep {self.settings['speed']}{' deg/s (image designed for 300: pass and gap x1.00)' if self.settings['speed'] != 'img' else ': the image\'s design speed, 300 deg/s'}\n"
+                    f"current limit {'off; brightest column 0.31 A (20 mA per channel at full)' if float(self.settings['amps']) == 0 else f'{float(self.settings["amps"]):.2f} A: brightest column 0.31 A at bri {self.settings["bri"]}, not limiting'}\n"
                     f"dir {'ltr (image)' if self.settings['dir'] == 'img' else self.settings['dir']}, render {self.settings['mode']}, gamma {self.settings['gamma']}, bri {self.settings['bri']}, auto {self.settings['auto']}\n")
 
     def _handle(self, text: str):
@@ -223,7 +224,7 @@ class FakeDevice:
             self.store[slot] = data
             self.current = sorted(self.store).index(slot) + 1
             self._write(f"ok {total}\n")
-        elif cmd in ("len", "dens", "bri", "gamma", "mode", "dir", "col", "gap", "auto", "img", "mhz", "speed"):
+        elif cmd in ("len", "dens", "bri", "gamma", "mode", "dir", "col", "gap", "auto", "img", "mhz", "speed", "amps"):
             if not args:
                 self._write("err missing value\n")
                 return

@@ -97,6 +97,24 @@ static uint8_t setRender(uint8_t mode, uint8_t bri, float gamma) {
   return mode;
 }
 
+// Output load of one source pixel: the three channel values the chip will drive,
+// summed (0..765), scaled by the 5-bit current field on chips that use it as such.
+// Times POV_MA_PER_CHANNEL / 255 this is the pixel's current.
+static uint16_t pixelLoad(const uint8_t *s) {
+  if (s_mode == RENDER_CURRENT) {
+    uint8_t m = s[0] > s[1] ? s[0] : s[1];
+    if (s[2] > m) m = s[2];
+    const uint8_t lvl = s_lut5[m];
+    if (!lvl) return 0;
+    const uint16_t on = (uint16_t)(((uint16_t)s[0] * 2u >= m) + ((uint16_t)s[1] * 2u >= m) + ((uint16_t)s[2] * 2u >= m));
+    return (uint16_t)(on * 255u * lvl / 31u);
+  }
+  uint16_t v;
+  if (s_mode == RENDER_FULL) v = (uint16_t)(s_lut8[s[0]] + s_lut8[s[1]] + s_lut8[s[2]]);
+  else v = (uint16_t)((s[0] >= 128 ? s_on : 0) + (s[1] >= 128 ? s_on : 0) + (s[2] >= 128 ? s_on : 0));
+  return POV_CURRENT_GB ? (uint16_t)((uint32_t)v * s_gb / 31u) : v;
+}
+
 #if LED_IS_CLOCKED(POV_CHIP)
 // =================================================================================
 // Clocked: SPI + DMA

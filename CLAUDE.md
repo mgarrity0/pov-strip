@@ -30,6 +30,10 @@ implementations.
   and `povstrip/fakedev.py` implement both ends.
 - PWM-safe mode drives channels fully on or off; brightness only applies through the 5-bit
   current field on SK9822/HD107S. `led_out.h setRender` and `core.js makeRender` match.
+- Current limit (`amps`, `S.maxMa`): `applyLimit` scales brightness until the brightest
+  displayed column of the current image, estimated by `ledout::pixelLoad` at
+  `POV_MA_PER_CHANNEL` (20 mA) per channel, stays under the limit. The Studio's "Peak column
+  current" readout uses the same 20 mA.
 - config.h macros are prefixed `POV_` so they cannot collide with the esp32 core. Every one is
   `#ifndef`-guarded; `config_local.h` (gitignored, written by `povstrip flash` / the Studio's
   Flash button from the page's chip and pin controls) overrides them.

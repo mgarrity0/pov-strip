@@ -71,6 +71,7 @@ Chips: APA102, SK9822, HD107S (data + clock); WS2812B, WS2812B-V5, SK6812 (RGB),
 - Defaults: data GPIO4 (D4 on an ESP32 DevKit), clock GPIO18 (D18, clocked chips only). XIAO ESP32S3: data 9 (D10), clock 7 (D8); its D4 label is GPIO5.
 - Level-shift data and clock to 5 V (74AHCT125 on 5 V). Keep the MCU-to-strip lead short at 16 MHz and above; a 33 to 100 ohm series resistor at the driver helps.
 - `POV_DATA_IN_AT_BOTTOM 1` if the controller sits at the base of a vertical strip.
+- Power the strip from its own 5 V supply, ground tied to the board. Fed from the DevKit's 5V pin, the strip's current runs through the USB cable and the PC port: a bright image on 144 LEDs is about 1 A, the port's protection trips, and the board drops off USB (Windows: "a device attached to the system is not functioning", every command times out) until it is unplugged and replugged. The `amps` limit (0.4 A for USB power) keeps that from happening while you test.
 - 5 m strips: inject 5 V at both ends. A full-white column on 300 LEDs at 20 mA per channel is 18 A; POV duty is low but the column peak is real.
 
 ## The numbers that matter
@@ -120,6 +121,8 @@ Viewers resolve flicker during saccades up to a mean of ~2 kHz (Roberts & Wilkin
                          slower than the design speed stretches pass and gap, see below)
     dir ltr|rtl|alt|pal|img
     bri <0-255>  gamma <x>  mode full|safe|current
+    amps <A> | amps 0    current limit: dims an image whose brightest column would draw more
+                         (20 mA per channel at full, POV_MA_PER_CHANNEL); 0.4 for USB power
     img <n> | next       select image; auto on|off for the playlist
     mhz <f>              SPI clock (clocked chips)
     test | test off      static frame: 3 red LEDs at the data-in end, then R/G/B/W quarters

@@ -90,6 +90,11 @@
 #define POV_ASPECT_LOCK       1
 #endif
 
+#ifndef POV_MA_PER_CHANNEL
+#define POV_MA_PER_CHANNEL    20     // one LED channel at full, for the current limit ("amps"):
+                                     // 5050 parts ~20 mA, 2020 parts ~12 mA
+#endif
+
 #ifndef POV_SERIAL_BAUD
 #define POV_SERIAL_BAUD       115200
 #endif

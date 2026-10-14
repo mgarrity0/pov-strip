@@ -35,6 +35,7 @@ struct Settings {
   bool autoAdvance;
   float spiMHz;
   uint16_t sweepDps; // viewer's eye/head speed across the strip; 0 = the image's design speed
+  uint16_t maxMa;    // current limit for the brightest column, mA; 0 = none
 };
 static Settings S;
 static Preferences prefs;
@@ -57,6 +58,8 @@ static uint32_t g_gapUs = 0;
 static float g_stretch = 1.0f;              // pass and gap time scale from the sweep speed
 static uint8_t g_dir = POV_DIR_LTR;
 static uint8_t g_mode = RENDER_FULL;
+static uint8_t g_briEff = 255;              // brightness after the current limit
+static uint32_t g_peakMa = 0;               // brightest column at S.bri, estimated
 static uint16_t g_img = 0;                  // playlist index
 static PovImage g_cur;                      // the image being played
 static char g_curName[24] = "";
@@ -118,6 +121,7 @@ static void defaults() {
   S.autoAdvance = true;
   S.spiMHz = POV_SPI_MHZ;
   S.sweepDps = 0;
+  S.maxMa = 0;
 }
 
 static void loadSettings() {
@@ -141,6 +145,7 @@ static void loadSettings() {
   S.autoAdvance = prefs.getBool("auto", S.autoAdvance);
   S.spiMHz = prefs.getFloat("mhz", S.spiMHz);
   S.sweepDps = prefs.getUShort("spd", S.sweepDps);
+  S.maxMa = prefs.getUShort("ma", S.maxMa);
   prefs.end();
 }
 
@@ -158,6 +163,7 @@ static void saveSettings() {
   prefs.putBool("auto", S.autoAdvance);
   prefs.putFloat("mhz", S.spiMHz);
   prefs.putUShort("spd", S.sweepDps);
+  prefs.putUShort("ma", S.maxMa);
   prefs.putUInt("cfg", configHash());
   prefs.end();
 }
@@ -232,6 +238,40 @@ static void resampleImage(const PovImage &im, uint8_t *dst, uint16_t rows, uint3
 }
 
 // Rebuilds the pixel source, row/column maps and timing for the current image and strip.
+// Estimated current of the brightest displayed column at brightness `bri`, mA
+// (POV_MA_PER_CHANNEL per channel at full). Leaves the render LUTs set for `bri`.
+static inline const uint8_t *colPtr(const PovImage &, int k);
+static uint32_t peakColumnMa(uint8_t bri) {
+  ledout::setRender(S.mode, bri, S.gamma);
+  if (!g_src || !g_colMap || !g_cols) return 0;
+  uint32_t peak = 0;
+  for (uint32_t k = 0; k < g_cols; ++k) {
+    const uint8_t *col = colPtr(g_cur, k);
+    uint32_t sum = 0;
+    for (uint16_t i = 0; i < g_n; ++i) sum += ledout::pixelLoad(col + (uint32_t)g_rowMap[i] * 3u);
+    if (sum > peak) peak = sum;
+  }
+  return (uint32_t)((uint64_t)peak * POV_MA_PER_CHANNEL / 255u);
+}
+
+// Current limit: scales the brightness down until the brightest column of the
+// current image stays under S.maxMa. Dim images keep their brightness.
+static void applyLimit() {
+  g_peakMa = peakColumnMa(S.bri);
+  uint8_t bri = S.bri;
+  if (S.maxMa && bri > 1) {
+    uint32_t ma = g_peakMa;
+    for (int it = 0; it < 4 && ma > S.maxMa && bri > 1; ++it) {
+      uint32_t b = (uint32_t)bri * S.maxMa / ma;
+      if (b >= bri) b = bri - 1;
+      bri = (uint8_t)(b < 1 ? 1 : b);
+      ma = peakColumnMa(bri);
+    }
+  }
+  g_briEff = bri;
+  g_mode = ledout::setRender(S.mode, bri, S.gamma);
+}
+
 static void applyImage() {
   const PovImage &im = g_cur;
 
@@ -313,6 +353,7 @@ static void applyImage() {
     if (s >= g_srcCols) s = g_srcCols - 1;
     g_colMap[k] = (uint16_t)s;
   }
+  applyLimit();
 }
 
 static void applyStrip() {
@@ -325,7 +366,8 @@ static void applyStrip() {
 
 static void applyRender() {
   g_mode = ledout::setRender(S.mode, S.bri, S.gamma);
-  if (g_resampled) applyImage();  // the resampled copy depends on gamma
+  if (g_resampled) applyImage();  // the resampled copy depends on gamma; ends in applyLimit()
+  else applyLimit();
 }
 
 // ---- playlist ----------------------------------------------------------------------
@@ -509,6 +551,13 @@ static void printInfo() {
   Serial.printf("dir %s%s, render %s, gamma %.2f, bri %u, auto %s\n", dirName(g_dir),
                 S.dir < 0 ? " (image)" : "", modeName(g_mode), S.gamma, S.bri,
                 S.autoAdvance ? "on" : "off");
+  if (S.maxMa) {
+    Serial.printf("current limit %.2f A: brightest column %.2f A at bri %u", S.maxMa / 1000.0, g_peakMa / 1000.0, S.bri);
+    if (g_briEff < S.bri) Serial.printf(", playing at bri %u\n", g_briEff);
+    else Serial.println(", not limiting");
+  } else
+    Serial.printf("current limit off; brightest column %.2f A (%d mA per channel at full)\n", g_peakMa / 1000.0,
+                  (int)POV_MA_PER_CHANNEL);
   Serial.printf("passes %lu, late columns %lu", (unsigned long)g_passes, (unsigned long)g_late);
   if (ledout::errors()) Serial.printf(", LED output errors %lu", (unsigned long)ledout::errors());
   Serial.println();
@@ -526,6 +575,7 @@ static void printHelp() {
       "                       slower than the image's design speed stretches pass and gap\n"
       "  dir ltr|rtl|alt|pal|img\n"
       "  bri <0-255>   gamma <x>   mode full|safe|current\n"
+      "  amps <A> | amps 0    current limit for the brightest column (USB power: 0.4)\n"
       "  img <n> | next       select image (1-based)\n"
       "  auto on|off          playlist advance\n"
       "  mhz <f>              SPI clock (clocked chips)\n"
@@ -625,6 +675,11 @@ static void handleCommand(char *line) {
   } else if (!strcmp(cmd, "gap")) {
     S.gapUs = !strcmp(arg, "img") ? -1 : (int32_t)strtol(arg, nullptr, 10);
     applyImage();
+  } else if (!strcmp(cmd, "amps")) {
+    const float a = atof(arg);
+    if (a < 0 || a > 60) { Serial.println("err amps: 0 (off) to 60"); return; }
+    S.maxMa = (uint16_t)lroundf(a * 1000.0f);
+    applyRender();
   } else if (!strcmp(cmd, "speed")) {
     if (!strcmp(arg, "img")) S.sweepDps = 0;
     else {
