@@ -313,6 +313,25 @@ POV.patterns = {
     const t = Math.min(1, Math.max(0, v));
     return [255, Math.round(30 + 120 * t), Math.round(140 - 120 * t)];
   } },
+  eye: { label: "Eye", aspect: 1.8, px(u, v) {
+    // almond lids, teal iris with spokes and a dark limbal ring, black pupil, one catchlight
+    const X = (u - 0.5) * 3.6, Y = (v - 0.5) * 2;   // height 2 units, width 3.6
+    const t = X / 1.78;
+    if (Math.abs(t) >= 1) return [0, 0, 0];
+    const lid = 0.95 * Math.pow(1 - t * t, 0.72);
+    if (Math.abs(Y) >= lid) return [0, 0, 0];
+    if (Math.hypot(X + 0.2, Y + 0.22) < 0.1) return [255, 255, 255];
+    const r = Math.hypot(X, Y);
+    if (r < 0.26) return [0, 0, 0];
+    if (r < 0.62) {
+      const a = Math.atan2(Y, X), k = (r - 0.26) / 0.36;
+      const spoke = 0.75 + 0.25 * Math.sin(a * 14 + k * 6);
+      const b = (1 - 0.35 * k) * spoke * (r > 0.56 ? 0.45 : 1);
+      return [Math.round(40 * b), Math.round(170 * b), Math.round(200 * b)];
+    }
+    const e = Math.abs(Y) / lid, s = 225 - 60 * e * e;   // sclera, greyer toward the lids
+    return [Math.round(s), Math.round(s), Math.round(s * 0.96)];
+  } },
   chevrons: { label: "Rainbow chevrons", aspect: 0.5, px(u, v) {
     const k = (v + Math.abs(u - 0.5) * 0.9) * 6;
     if ((Math.floor(k) & 1)) return [0, 0, 0];
