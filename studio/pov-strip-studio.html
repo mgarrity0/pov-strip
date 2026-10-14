@@ -404,7 +404,7 @@ tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transf
           <option value="esp32s3_devkitc">ESP32-S3 DevKitC</option>
         </select>
         <button class="btn" type="button" id="devFlash">Flash firmware</button>
-        <span class="note" id="devFlashNote">First time, or after editing config.h. Uses Arduino IDE's arduino-cli; 1 to 5 minutes.</span>
+        <span class="note" id="devFlashNote">Firmware only: chip, pins, board. First time or after changing those; 1 to 5 minutes. Pictures are not part of it: tick slides and use Send.</span>
       </div>
       <div class="actions">
         <button class="btn primary" type="button" id="devSend" disabled>Send ticked slides to strip</button>
@@ -2002,7 +2002,7 @@ async function devInit() {
       devLog(j.lines.slice(-25), true);
       if (j.running) { flashTimer = setTimeout(pollFlash, 1200); return; }
       $("devFlash").disabled = false; $("devConnect").disabled = false;
-      if (j.result) { devLog("flashed. Connecting..."); setTimeout(() => $("devConnect").click(), 2500); }
+      if (j.result) { devLog("flashed. The strip plays its built-in heart until you Send ticked slides. Connecting..."); setTimeout(() => $("devConnect").click(), 2500); }
       else devLog("flash failed; the log above says why");
     } catch (e) { devLog("flash status: " + e.message); $("devFlash").disabled = false; $("devConnect").disabled = false; }
   }
