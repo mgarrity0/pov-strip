@@ -1,13 +1,13 @@
-// Cross-checks the firmware's integer resampler (resampleImage in pov_strip.ino,
+// Cross-checks the firmware's integer resampler (resampleImage in pov_resample.h,
 // compiled for the host) against the Studio's float one (POV.areaResample).
 //   cd tools/check_resampler && node check.js
 // Expect max |C - JS| <= 2 (8-bit rounding of fixed vs float).
 const path = require("path"), fs = require("fs"), cp = require("child_process");
 const ROOT = path.join(__dirname, "..", "..");
 const P = require(path.join(ROOT, "studio", "core.js"));
-const ino = fs.readFileSync(path.join(ROOT, "pov_strip", "pov_strip.ino"), "utf8");
-const m = ino.match(/static uint16_t s_lin16\[256\];[\s\S]*?(?=\/\/ Rebuilds the pixel source)/);
-if (!m) throw new Error("resampler block not found in pov_strip.ino");
+const hdr = fs.readFileSync(path.join(ROOT, "pov_strip", "pov_resample.h"), "utf8");
+const m = hdr.match(/static uint16_t s_lin16\[256\];[\s\S]*$/);
+if (!m) throw new Error("resampler block not found in pov_resample.h");
 fs.writeFileSync(path.join(__dirname, "resample_extract.inc"), m[0]);
 cp.execFileSync("g++", ["-O2", "-o", path.join(__dirname, "host"), path.join(__dirname, "host.cpp")], { cwd: __dirname, stdio: "inherit" });
 function cmp(SR, SC, rows, cols, gamma, gen) {

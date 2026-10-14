@@ -15,6 +15,7 @@
 #include "config.h"
 #include "pov_image.h"
 #include "pov_store.h"
+#include "pov_resample.h"
 #include "led_out.h"
 
 #define POV_VERSION "2.1"
@@ -65,6 +66,8 @@ static PovImage g_cur;                      // the image being played
 static char g_curName[24] = "";
 static uint8_t *g_curBuf = nullptr;         // RAM copy of a stored image (freed on switch)
 static bool g_curFromStore = false;
+static uint8_t g_curSlot = 0;               // stored slot being played (when g_curFromStore)
+static char g_loadWhy[96] = "";             // why a stored image is not playing (for "info")
 static uint32_t g_imgSince = 0;
 static int64_t g_deadline = 0;
 static int g_buf = 0;
@@ -182,62 +185,24 @@ static uint16_t ledsFor(float lengthM, uint16_t density) {
   return (uint16_t)n;
 }
 
-// ---- resampling -----------------------------------------------------------------------
-// When the displayed grid (LEDs x columns) is smaller than the stored image in either
-// direction, picking the nearest stored pixel drops whole rows or columns: a thin line
-// can vanish or show at full strength depending on where it falls. Instead the image
-// is resampled once into RAM: each displayed pixel is the area average of the stored
-// pixels it covers, taken in linear light (through the output gamma) so the emitted
-// energy is kept. A thin line then shows at reduced strength instead of disappearing.
-// Pure upsampling (a longer strip) just repeats pixels and needs no RAM.
-static uint16_t s_lin16[256];
-
-static uint8_t encode16(uint32_t lin) {  // inverse of s_lin16, nearest entry
-  uint16_t lo = 0, hi = 255;
-  while (lo < hi) {
-    const uint16_t mid = (uint16_t)((lo + hi) / 2);
-    if (s_lin16[mid] < lin) lo = (uint16_t)(mid + 1);
-    else hi = mid;
+// ---- resampling: pov_resample.h ---------------------------------------------------------
+// Resamples the current image into dst from wherever its pixels are: RAM (compiled-in,
+// or a loaded copy) or the stored slot's file. Returns false when nothing could be read.
+static bool resampleCurrent(uint8_t *dst, uint16_t rows, uint32_t cols, float gamma) {
+  const PovImage &im = g_cur;
+  if (im.data) {
+    const uint32_t SR = im.rows;
+    resampleImage([&](uint32_t i) { return im.data + (size_t)i * SR * 3u; }, im.rows, im.cols, dst, rows, cols, gamma);
+    return true;
   }
-  if (lo > 0 && lin - s_lin16[lo - 1] < s_lin16[lo] - lin) lo--;
-  return (uint8_t)lo;
+  if (!g_curFromStore) return false;
+  povstore::ColumnReader rd;
+  if (!rd.open(g_curSlot, im)) return false;
+  resampleImage([&](uint32_t i) { return rd.get(i); }, im.rows, im.cols, dst, rows, cols, gamma);
+  rd.close();
+  return true;
 }
 
-static void resampleImage(const PovImage &im, uint8_t *dst, uint16_t rows, uint32_t cols, float gamma) {
-  if (gamma < 0.5f) gamma = 0.5f;
-  for (int v = 0; v < 256; ++v) s_lin16[v] = (uint16_t)lroundf(powf(v / 255.0f, gamma) * 65535.0f);
-  const uint32_t SC = im.cols, SR = im.rows;
-  const uint64_t norm = (uint64_t)SC * SR;
-  // Displayed column kc covers stored columns [kc*SC/cols, (kc+1)*SC/cols); the same
-  // for rows. In units of 1/cols (1/rows) every overlap is an integer.
-  for (uint32_t kc = 0; kc < cols; ++kc) {
-    const uint64_t a = (uint64_t)kc * SC, b = (uint64_t)(kc + 1) * SC;
-    const uint32_t i0 = (uint32_t)(a / cols), i1 = (uint32_t)((b - 1) / cols);
-    for (uint32_t kr = 0; kr < rows; ++kr) {
-      const uint64_t ya = (uint64_t)kr * SR, yb = (uint64_t)(kr + 1) * SR;
-      const uint32_t j0 = (uint32_t)(ya / rows), j1 = (uint32_t)((yb - 1) / rows);
-      uint64_t acc[3] = {0, 0, 0};
-      for (uint32_t j = j0; j <= j1; ++j) {
-        const uint64_t lo = (uint64_t)j * rows, hi = lo + rows;
-        const uint64_t wy = (yb < hi ? yb : hi) - (ya > lo ? ya : lo);
-        for (uint32_t i = i0; i <= i1; ++i) {
-          const uint64_t clo = (uint64_t)i * cols, chi = clo + cols;
-          const uint64_t w = wy * ((b < chi ? b : chi) - (a > clo ? a : clo));
-          const uint8_t *p = im.data + ((uint32_t)i * SR + j) * 3u;
-          acc[0] += w * s_lin16[p[0]];
-          acc[1] += w * s_lin16[p[1]];
-          acc[2] += w * s_lin16[p[2]];
-        }
-      }
-      uint8_t *o = dst + (kc * rows + kr) * 3u;
-      o[0] = encode16((uint32_t)(acc[0] / norm));
-      o[1] = encode16((uint32_t)(acc[1] / norm));
-      o[2] = encode16((uint32_t)(acc[2] / norm));
-    }
-  }
-}
-
-// Rebuilds the pixel source, row/column maps and timing for the current image and strip.
 // Estimated current of the brightest displayed column at brightness `bri`, mA
 // (POV_MA_PER_CHANNEL per channel at full). Leaves the render LUTs set for `bri`.
 static inline const uint8_t *colPtr(const PovImage &, int k);
@@ -312,32 +277,45 @@ static void applyImage() {
   }
   g_cols = c;
 
-  // Pixel source: the stored image, or a resampled copy when the display grid is
-  // smaller in either direction.
+  // Pixel source. When the display grid is smaller than the image in either
+  // direction, a resampled copy (made straight from flash for stored images, so
+  // only the copy needs RAM). Otherwise the image itself, loaded into RAM.
   free(g_resampled);
   g_resampled = nullptr;
   g_nearest = false;
-  g_src = im.data;
-  g_srcRows = im.rows;
-  g_srcCols = im.cols;
-  if (g_n != im.rows || c != im.cols) {
-    if (g_n < im.rows || c < im.cols) {
-      const size_t need = (size_t)g_n * c * 3u;
-      uint8_t *buf = (uint8_t *)heap_caps_malloc(need, MALLOC_CAP_SPIRAM);
-      if (!buf && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > need + 32768u)
-        buf = (uint8_t *)malloc(need);
-      if (buf) {
-        resampleImage(im, buf, g_n, c, S.gamma);
-        g_resampled = buf;
-        g_src = buf;
-        g_srcRows = g_n;
-        g_srcCols = (uint16_t)c;
-      } else {
-        g_nearest = true;  // not enough RAM: rows/columns get skipped
-      }
+  bool ready = false;
+  if (g_n < im.rows || c < im.cols) {
+    const size_t need = (size_t)g_n * c * 3u;
+    uint8_t *buf = (uint8_t *)heap_caps_malloc(need, MALLOC_CAP_SPIRAM);
+    if (!buf && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > need + 8192u) buf = (uint8_t *)malloc(need);
+    if (buf && resampleCurrent(buf, g_n, c, S.gamma)) {
+      g_resampled = buf;
+      g_src = buf;
+      g_srcRows = g_n;
+      g_srcCols = (uint16_t)c;
+      ready = true;
     } else {
-      g_nearest = true;    // upsampling only: repeating pixels loses nothing
+      free(buf);
     }
+  }
+  if (!ready) {
+    if (!im.data && g_curFromStore) {   // 1:1 or upsampled playback needs the pixels in RAM
+      const char *why = "";
+      if (!povstore::load(g_curSlot, g_cur, g_curName, &g_curBuf, &why)) {
+        snprintf(g_loadWhy, sizeof g_loadWhy, "slot %u (%ux%u, %lu kB): %s; playing the compiled-in image",
+                 (unsigned)g_curSlot, im.rows, im.cols, (unsigned long)(((size_t)im.rows * im.cols * 3u) >> 10), why);
+        Serial.println(g_loadWhy);
+        g_curFromStore = false;
+        g_cur = POV_IMAGES[0];
+        strncpy(g_curName, "compiled-in", sizeof g_curName);
+        applyImage();
+        return;
+      }
+    }
+    g_src = im.data;
+    g_srcRows = im.rows;
+    g_srcCols = im.cols;
+    if (g_n != im.rows || c != im.cols) g_nearest = true;   // upsampling, or no RAM for a copy
   }
 
   // Maps from LED / displayed column to the source. Identity (with the data-in
@@ -385,14 +363,16 @@ static void selectImage(uint16_t i) {
   free(g_curBuf);
   g_curBuf = nullptr;
   g_curFromStore = false;
+  g_loadWhy[0] = 0;
   strcpy(g_curName, "");
   if (povstore::count()) {
     const char *why = "";
-    if (povstore::load(povstore::slotAt((uint8_t)g_img), g_cur, g_curName, &g_curBuf, &why)) {
-      g_curFromStore = true;
+    g_curSlot = povstore::slotAt((uint8_t)g_img);
+    if (povstore::peek(g_curSlot, g_cur, g_curName, &why)) {
+      g_curFromStore = true;   // pixels stay in flash until applyImage() needs them
     } else {
-      Serial.printf("slot %u failed to load (%s); playing the compiled-in image\n",
-                    (unsigned)povstore::slotAt((uint8_t)g_img), why);
+      snprintf(g_loadWhy, sizeof g_loadWhy, "slot %u: %s; playing the compiled-in image", (unsigned)g_curSlot, why);
+      Serial.println(g_loadWhy);
       g_cur = POV_IMAGES[0];
       strncpy(g_curName, "compiled-in", sizeof g_curName);
     }
@@ -524,8 +504,9 @@ static void printInfo() {
 #endif
   Serial.printf("\nstrip %.2f m x %u/m = %u LEDs (max %u)\n", S.lengthM, S.density, g_n,
                 (unsigned)POV_NUM_LEDS_MAX);
-  Serial.printf("wire %lu bits per column -> min column %lu us (%.0f columns/s max)\n",
-                (unsigned long)ledout::wireBits(), (unsigned long)minUs, 1e6 / minUs);
+  Serial.printf("wire %lu bits per column, measured %lu us -> min column %lu us (%.0f columns/s max)\n",
+                (unsigned long)ledout::wireBits(), (unsigned long)ledout::measuredUs(), (unsigned long)minUs,
+                1e6 / minUs);
   Serial.printf("image %u/%u%s: %s, %u rows x %u cols, sized for %.2f m, hold %u s\n", g_img + 1,
                 imageCount(), g_curFromStore ? "" : " (compiled-in)", g_curName, im.rows, im.cols,
                 im.length_m, im.hold_s);
@@ -543,9 +524,10 @@ static void printInfo() {
     else
       Serial.printf("sweep img: the image's design speed, %u deg/s%s\n", designDps, im.sweep_dps ? "" : " assumed");
   }
+  if (g_loadWhy[0]) Serial.printf("  %s\n", g_loadWhy);
   if (g_resampled)
-    Serial.printf("  resampled to %u x %lu in RAM (area average); export for this strip to skip that\n",
-                  g_n, (unsigned long)g_cols);
+    Serial.printf("  resampled to %u x %lu in RAM (area average%s); export for this strip to skip that\n",
+                  g_n, (unsigned long)g_cols, g_cur.data ? "" : ", read from flash");
   else if (g_nearest && (g_n < im.rows || g_cols < im.cols))
     Serial.println("  WARNING: not enough RAM to resample, rows/columns are being skipped; export for this strip");
   Serial.printf("dir %s%s, render %s, gamma %.2f, bri %u, auto %s\n", dirName(g_dir),
@@ -558,6 +540,8 @@ static void printInfo() {
   } else
     Serial.printf("current limit off; brightest column %.2f A (%d mA per channel at full)\n", g_peakMa / 1000.0,
                   (int)POV_MA_PER_CHANNEL);
+  Serial.printf("RAM free %u kB, largest block %u kB\n", (unsigned)(ESP.getFreeHeap() >> 10),
+                (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >> 10));
   Serial.printf("passes %lu, late columns %lu", (unsigned long)g_passes, (unsigned long)g_late);
   if (ledout::errors()) Serial.printf(", LED output errors %lu", (unsigned long)ledout::errors());
   Serial.println();

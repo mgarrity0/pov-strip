@@ -993,8 +993,9 @@ function computeNumbers() {
   const passFrac = Math.min(1, (dirCode() === POV.DIRS.alt ? 2 * T : T) / P);
   const amps = (frac) => frac * 3 * D.n * 0.02;  // 20 mA per channel assumed
   const dataBytes = ex.reduce((a, x) => a + x.rgb.length, 0);
+  const maxSlideBytes = ex.reduce((a, x) => Math.max(a, x.rgb.length), 0);
   return { r, chip, T, G, P, Dg, widthDeg, pwmHz, pwmCycles, skew, peakLoad, nExport: ex.length,
-    meanLoad: loads[loads.length - 1].mean * passFrac, amps, dataBytes, flash: flashBudget(),
+    meanLoad: loads[loads.length - 1].mean * passFrac, amps, dataBytes, maxSlideBytes, flash: flashBudget(),
     clean: POV.cleanChance(Dg, T, G), colHz: 1e6 / D.colUs };
 }
 
@@ -1013,6 +1014,7 @@ function pillsFor(N) {
     out.push(["bad", "SPI", `${st.spiMHz} MHz is over the ${POV.CHIPS[st.chip].maxMHz} MHz datasheet limit`]);
   if (N.skew > D.colUs * 0.25) out.push(["info", "SKEW", `Far end updates ${fmt.us(N.skew)} late: image leans ${(N.skew / D.colUs).toFixed(1)} columns`]);
   if (N.dataBytes > N.flash.free) out.push(["bad", "FLASH", `${fmt.bytes(N.dataBytes)} of images; ${fmt.bytes(N.flash.free)} fits beside the firmware in the ${N.flash.part}`]);
+  if (dev.ramKb && N.maxSlideBytes > (dev.ramKb - 8) * 1024) out.push(["bad", "RAM", `largest slide ${fmt.bytes(N.maxSlideBytes)}; the strip has ${dev.ramKb} kB in one block. Lower the density, length or slide scale, or use a board with PSRAM`]);
   else if (N.flash.smallFree && N.dataBytes > N.flash.smallFree) out.push(["info", "FLASH", `${fmt.bytes(N.dataBytes)} of images: needs the Huge APP partition in Arduino IDE`]);
   return out;
 }
@@ -1064,6 +1066,9 @@ function renderNumbers() {
     ["Average current", fmt.a(meanA), "This slide, including the dark gap"],
     ["Image data", fmt.bytes(N.dataBytes), `${N.nExport} exported slide${N.nExport === 1 ? "" : "s"}, RGB888. Room for ${fmt.bytes(N.flash.free)} in the ${N.flash.part}` +
       (N.flash.smallFree ? `; ${fmt.bytes(N.flash.smallFree)} with the Arduino IDE default` : "")],
+    ["Largest slide in RAM", fmt.bytes(N.maxSlideBytes), dev.ramKb
+      ? `the strip reports ${dev.ramKb} kB free in one block; a slide above that plays as the built-in heart`
+      : "an ESP32 without PSRAM has about 110 kB in one block; a slide above that plays as the built-in heart. Boards with PSRAM (XIAO ESP32S3) have megabytes"],
   ];
   $("tbl").innerHTML = rows.map((x) => x.length === 1
     ? `<tr class="grp"><th colspan="3">${x[0]}</th></tr>`
@@ -1350,7 +1355,7 @@ if (window.claude && typeof window.claude.use === "function") {
 }
 
 // ---------------------------------------------------------------- device (povstrip serve)
-const dev = { api: false, connected: false, busy: false };
+const dev = { api: false, connected: false, busy: false, ramKb: 0 };
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
@@ -1412,6 +1417,8 @@ function syncFromDevice(lines) {
   if (br && +br[1] !== +st.bri) { st.bri = +br[1]; $("bri").value = st.bri; changed(); }
   const am = txt.match(/^current limit (off|([\d.]+) A)/m);
   if (am) st.tune.maxA = am[2] ? +am[2] : 0;
+  const ram = txt.match(/largest block (\d+) kB/);
+  if (ram) { dev.ramKb = +ram[1]; renderNumbers(); }
   tuneShow(sw && gp ? ((txt.match(/^column .*$/m) || [""])[0]) : "");
   save();
 }
@@ -1595,7 +1602,9 @@ async function devInit() {
     }
     await api("/api/cmd", { text: "img 1" });
     await api("/api/cmd", { text: "save" });
-    const info = await api("/api/ls"); devLog(info.lines);
+    const lsj = await api("/api/ls"); devLog(lsj.lines);
+    const info = await api("/api/info"); devLog(info.lines.filter((l) => /^image |^  slot|^  resampled|^RAM/.test(l)));
+    syncFromDevice(info.lines);
     setTimeout(() => { prog.hidden = true; }, 1500);
   }));
 }

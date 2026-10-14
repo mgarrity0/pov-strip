@@ -12,7 +12,7 @@ src = open(os.path.join(ROOT, "studio", "studio.src.html"), encoding="utf-8").re
 core = open(os.path.join(ROOT, "studio", "core.js"), encoding="utf-8").read()
 files = {}
 for rel in ["platformio.ini", "README.md", "pov_strip/pov_strip.ino", "pov_strip/config.h",
-            "pov_strip/led_out.h", "pov_strip/pov_types.h", "pov_strip/pov_store.h"]:
+            "pov_strip/led_out.h", "pov_strip/pov_types.h", "pov_strip/pov_store.h", "pov_strip/pov_resample.h"]:
     files[rel] = open(os.path.join(ROOT, rel), encoding="utf-8").read()
 fw = json.dumps({"files": files}, ensure_ascii=False).replace("<", "\\u003c")
 assert "</script" not in core.lower()

@@ -12,19 +12,26 @@ implementations.
   `POV.areaResample` output.
 - `POV_DIR_LTR` means viewers glance left to right, so the firmware plays the right-most
   column first (`runCycle`). `studio/core.js` `columnAt` must agree.
-- Column period = max(design period, chip minimum). Chip minimum: clocked
+- Column period = max(design period, chip minimum). Chip minimum estimate: clocked
   `frameBytes(n)*8/spiHz + 25 us`; single-wire `n*24*bitNs + reset + 25 us`. The three
   copies: `led_out.h minColUs`, `core.js chipMinColUs`, `povstrip/core.py chip_min_col_us`.
+  The firmware also measures a blank column (`ledout::calibrate`, boot and after len/dens/mhz)
+  and uses the longer of estimate and measured + 15 us, so its `info` can exceed the estimate.
 - Image width is preserved across column periods: displayed columns =
   `im.cols * im.col_us * stretch / colUs * (lengthM / im.length_m)` (`applyImage`), with
   `stretch = designSweep / S.sweepDps` (1 when `speed img`). The design sweep speed travels
   in header byte 17 (units of 5 deg/s, 0 = unknown = 300) and `PovImage.sweep_dps`; the image's
   gap scales by the same stretch.
 - Resampling when the display grid differs from the stored image: area average in linear
-  light through the output gamma, integer-overlap weights. `resampleImage` (C),
+  light through the output gamma, integer-overlap weights. `resampleImage` (C, in
+  `pov_resample.h`, fed by a column-fetch functor: RAM or a one-column flash reader),
   `POV.areaResample` (JS), `core.area_resample` (Python) must agree within 2/255:
   run `cd tools/check_resampler && node check.js` and `python3 test/test_core_vs_js.py`
   if present.
+- Stored images: `selectImage` reads only the header (`povstore::peek`); `applyImage` either
+  resamples from flash into a copy at the display size, or loads the whole image for 1:1
+  playback. Either failing falls back to the compiled-in image with the reason in `g_loadWhy`
+  (printed by `info`).
 - Serial console: every command ends with a line `ok`, `ok <n>` or `err <reason>`; boot ends
   with `ready`. `put` protocol is specified at the top of `pov_store.h`; `povstrip/protocol.py`
   and `povstrip/fakedev.py` implement both ends.

@@ -16,6 +16,7 @@
 #pragma once
 #include <Arduino.h>
 #include <math.h>
+#include "esp_timer.h"
 #include "config.h"
 
 #if LED_IS_CLOCKED(POV_CHIP)
@@ -52,6 +53,8 @@ static uint8_t s_gb = 31;     // 5-bit field for FULL / PWM_SAFE
 static uint8_t s_on = 255;    // "on" value for PWM_SAFE
 static uint8_t s_mode = RENDER_FULL;
 static uint8_t s_ord[3] = {2, 1, 0};  // wire byte k <- source channel s_ord[k]
+static uint32_t s_measUs = 0;         // measured time of one blank column, send() to done
+#define POV_COL_MARGIN_US 15          // added to the measured column time
 
 static void parseOrder(const char *o) {
   for (int k = 0; k < 3; ++k) {
@@ -159,6 +162,8 @@ static bool addDevice(uint32_t hz) {
   return true;
 }
 
+static void calibrate();
+
 static void waitDone() {
   if (!s_busy || !s_dev) return;
   spi_transaction_t *done = nullptr;
@@ -194,6 +199,7 @@ static bool begin(uint16_t nMax, uint16_t n, uint32_t hz) {
   if (!addDevice(hz)) return false;
   s_n = n > nMax ? nMax : n;
   s_bytes = frameBytes(s_n);
+  calibrate();
   return true;
 }
 
@@ -201,7 +207,9 @@ static bool setClock(uint32_t hz) {
   waitDone();
   if (s_dev) spi_bus_remove_device(s_dev);
   s_dev = nullptr;
-  return addDevice(hz);
+  const bool ok = addDevice(hz);
+  if (ok) calibrate();
+  return ok;
 }
 
 static int actualHz() { return s_hz; }
@@ -210,13 +218,37 @@ static void setCount(uint16_t n) {
   waitDone();
   s_n = n > s_nMax ? s_nMax : n;
   s_bytes = frameBytes(s_n);
+  calibrate();
 }
 
-// Wire time for one column, plus a fixed allowance for queueing the DMA.
+static void build(int i, const uint8_t *col, const uint16_t *map);
+static void send(int i);
+
+// Times three blank columns of the active count, send() to done: the DMA transfer
+// plus the driver's per-transaction and interrupt overhead, which the wire-time
+// estimate does not know.
+static void calibrate() {
+  uint32_t worst = 0;
+  for (int k = 0; k < 3; ++k) {
+    build(0, nullptr, nullptr);
+    const int64_t t0 = esp_timer_get_time();
+    send(0);
+    waitDone();
+    const uint32_t dt = (uint32_t)(esp_timer_get_time() - t0);
+    if (dt > worst) worst = dt;
+  }
+  s_measUs = worst;
+}
+
+// Wire time for one column plus a fixed allowance, or the measured time plus a
+// margin, whichever is longer.
 static uint32_t minColUs() {
   const double us = (double)s_bytes * 8.0 * 1e6 / (double)(s_hz > 0 ? s_hz : 1);
-  return (uint32_t)ceil(us) + 25;
+  const uint32_t est = (uint32_t)ceil(us) + 25;
+  const uint32_t meas = s_measUs + POV_COL_MARGIN_US;
+  return est > meas ? est : meas;
 }
+static uint32_t measuredUs() { return s_measUs; }
 
 static uint32_t wireBits() { return s_bytes * 8u; }
 
@@ -426,6 +458,8 @@ static bool makeEncoder() {
   return true;
 }
 
+static void calibrate();
+
 static void waitDone() {
   if (!s_busy || !s_chan) return;
   if (rmt_tx_wait_all_done(s_chan, 200) != ESP_OK) s_errs++;   // 720 LEDs take ~22 ms
@@ -454,6 +488,7 @@ static bool begin(uint16_t nMax, uint16_t n, uint32_t /*hz*/) {
   if (!makeEncoder()) return false;
   if (rmt_enable(s_chan) != ESP_OK) return false;
   s_n = n > nMax ? nMax : n;
+  calibrate();
   return true;
 }
 
@@ -461,17 +496,39 @@ static bool begin(uint16_t nMax, uint16_t n, uint32_t /*hz*/) {
 __attribute__((unused)) static bool setClock(uint32_t) { return true; }
 __attribute__((unused)) static int actualHz() { return (int)(1e9 / POV_BIT_NS); }
 
+static void fill(int i, const uint8_t *col, const uint16_t *map, uint16_t count);
+static void transmit(int i, uint16_t count);
+
+// Times three blank columns of the active count, transmit to latch done.
+static void calibrate() {
+  uint32_t worst = 0;
+  for (int k = 0; k < 3; ++k) {
+    fill(0, nullptr, nullptr, s_n);
+    const int64_t t0 = esp_timer_get_time();
+    transmit(0, s_n);
+    waitDone();
+    const uint32_t dt = (uint32_t)(esp_timer_get_time() - t0);
+    if (dt > worst) worst = dt;
+  }
+  s_measUs = worst;
+}
+
 static void setCount(uint16_t n) {
   waitDone();
   s_n = n > s_nMax ? s_nMax : n;
+  calibrate();
 }
 
 static uint32_t wireBits() { return 24u * s_n; }
 
-// Data time + latch the chip needs between columns, plus a fixed allowance.
+// Data time + latch the chip needs between columns plus a fixed allowance, or the
+// measured time plus a margin, whichever is longer.
 static uint32_t minColUs() {
-  return (uint32_t)((uint64_t)s_n * 24u * POV_BIT_NS / 1000u) + resetUs() + 25;
+  const uint32_t est = (uint32_t)((uint64_t)s_n * 24u * POV_BIT_NS / 1000u) + resetUs() + 25;
+  const uint32_t meas = s_measUs + POV_COL_MARGIN_US;
+  return est > meas ? est : meas;
 }
+static uint32_t measuredUs() { return s_measUs; }
 
 // Fills payload i (wire byte order) for `count` LEDs; col == nullptr -> black.
 static void fill(int i, const uint8_t *col, const uint16_t *map, uint16_t count) {

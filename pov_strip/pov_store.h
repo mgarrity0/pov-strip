@@ -131,20 +131,63 @@ static bool parseHeader(const uint8_t *h, PovImage &im, char *name, uint32_t fil
   return need == fileBytes;
 }
 
+// Header only: fills im (data = nullptr) and name without touching the pixels.
+static bool peek(uint8_t slot, PovImage &im, char *name, const char **why) {
+  File f = LittleFS.open(slotPath(slot), "r");
+  if (!f) { *why = "cannot open"; return false; }
+  uint8_t h[HEADER_BYTES];
+  const bool ok = f.read(h, HEADER_BYTES) == HEADER_BYTES && parseHeader(h, im, name, (uint32_t)f.size());
+  f.close();
+  im.data = nullptr;
+  if (!ok) *why = "bad header";
+  return ok;
+}
+
+// Column-at-a-time access to a stored image, one column buffered: lets the firmware
+// resample straight from flash when the whole image would not fit in RAM.
+struct ColumnReader {
+  File f;
+  uint32_t rows = 0;
+  int32_t cur = -1;
+  uint8_t *buf = nullptr;
+  bool open(uint8_t slot, const PovImage &im) {
+    f = LittleFS.open(slotPath(slot), "r");
+    if (!f) return false;
+    rows = im.rows;
+    buf = (uint8_t *)malloc(rows * 3u);
+    if (!buf) { f.close(); return false; }
+    return true;
+  }
+  const uint8_t *get(uint32_t i) {
+    if ((int32_t)i != cur) {
+      f.seek(HEADER_BYTES + (size_t)i * rows * 3u);
+      f.read(buf, rows * 3u);
+      cur = (int32_t)i;
+    }
+    return buf;
+  }
+  void close() {
+    if (f) f.close();
+    free(buf);
+    buf = nullptr;
+    cur = -1;
+  }
+};
+
 // Loads slot `slot` into a new buffer (PSRAM when present). *buf must be freed by
 // the caller. Returns false and prints nothing on failure; `why` gets a reason.
 static bool load(uint8_t slot, PovImage &im, char *name, uint8_t **buf, const char **why) {
   *buf = nullptr;
   File f = LittleFS.open(slotPath(slot), "r");
-  if (!f) { *why = "open"; return false; }
+  if (!f) { *why = "cannot open"; return false; }
   uint8_t h[HEADER_BYTES];
   if (f.read(h, HEADER_BYTES) != HEADER_BYTES || !parseHeader(h, im, name, (uint32_t)f.size())) {
-    f.close(); *why = "header"; return false;
+    f.close(); *why = "bad header"; return false;
   }
   const size_t bytes = (size_t)im.rows * im.cols * 3u;
   uint8_t *b = (uint8_t *)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
-  if (!b && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > bytes + 48u * 1024u) b = (uint8_t *)malloc(bytes);
-  if (!b) { f.close(); *why = "ram"; return false; }
+  if (!b && heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) > bytes + 8u * 1024u) b = (uint8_t *)malloc(bytes);
+  if (!b) { f.close(); *why = "not enough RAM"; return false; }
   size_t got = 0;
   while (got < bytes) {
     const size_t n = f.read(b + got, bytes - got);
