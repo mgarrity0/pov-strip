@@ -411,6 +411,56 @@ POV.patterns = {
   dino1: { label: DINO_POSES.dino1.label, aspect: DINO_ASPECT, px(u, v) { return dinoPx(u, v, DINO_POSES.dino1); } },
   dino2: { label: DINO_POSES.dino2.label, aspect: DINO_ASPECT, px(u, v) { return dinoPx(u, v, DINO_POSES.dino2); } },
   dino3: { label: DINO_POSES.dino3.label, aspect: DINO_ASPECT, px(u, v) { return dinoPx(u, v, DINO_POSES.dino3); } },
+  skull: { label: "Skull, glowing eyes", aspect: 0.85, px(u, v) {
+    // bone on black; sockets glow cyan from the inside, teeth with dark gaps
+    const X = (u - 0.5) * 1.7, Y = (v - 0.5) * 2;
+    const ell = (cx, cy, rx, ry, ang = 0) => {
+      const ca = Math.cos(ang), sa = Math.sin(ang), dx = X - cx, dy = Y - cy;
+      const ex = dx * ca + dy * sa, ey = -dx * sa + dy * ca;
+      return ex * ex / (rx * rx) + ey * ey / (ry * ry);
+    };
+    // eye sockets: dark rim, glowing core
+    for (const s of [-1, 1]) {
+      const d = ell(s * 0.27, -0.28, 0.21, 0.17, s * 0.25);
+      if (d < 1) {
+        const g = Math.max(0, 1 - d / 0.75);
+        return [Math.round(10 + 40 * g), Math.round(20 + 200 * g * g), Math.round(30 + 255 * g * g)];
+      }
+    }
+    // nasal cavity: two lobes and a point
+    if (ell(-0.07, 0.17, 0.085, 0.1) < 1 || ell(0.07, 0.17, 0.085, 0.1) < 1) return [0, 0, 0];
+    if (Y > -0.02 && Y < 0.2 && Math.abs(X) < 0.12 * (Y + 0.02) / 0.22) return [0, 0, 0];
+    // teeth: two rows with gaps, a dark line between
+    if (Math.abs(X) < 0.34 && Y > 0.44 && Y < 0.8) {
+      if (Math.abs(Y - 0.62) < 0.012) return [20, 20, 20];
+      const gap = Math.abs(((X + 0.34) / 0.097) % 1 - 0.5) > 0.42;
+      if (gap) return [25, 25, 22];
+      const edge = Y > 0.62 ? (0.8 - Y) / 0.18 : (Y - 0.44) / 0.18;   // rounded tooth tips
+      if (Math.abs(((X + 0.34) / 0.097) % 1 - 0.5) > 0.3 && edge < 0.12) return [25, 25, 22];
+      return [250, 246, 232];
+    }
+    // cranium + face + jaw
+    const cr = ell(0, -0.3, 0.64, 0.62), fc = ell(0, 0.12, 0.5, 0.47), jw = ell(0, 0.6, 0.37, 0.3);
+    if (cr < 1 || fc < 1 || jw < 1) {
+      const shade = Math.min(cr, fc, jw);                       // darker toward the edge
+      const k = 1 - 0.3 * shade * shade;
+      const cheek = Math.min(ell(-0.43, 0.22, 0.14, 0.1), ell(0.43, 0.22, 0.14, 0.1)) < 1 ? 0.75 : 1;
+      return [Math.round(238 * k * cheek), Math.round(228 * k * cheek), Math.round(205 * k * cheek)];
+    }
+    return [0, 0, 0];
+  } },
+  burst: { label: "Sunburst", aspect: 2, px(u, v) {
+    // 24 rays of cycling hue over three rings, white core; fills the strip edge to edge
+    const X = (u - 0.5) * 4, Y = (v - 0.5) * 2, r = Math.hypot(X, Y), a = Math.atan2(Y, X);
+    if (r < 0.14) return [255, 255, 255];
+    const ray = Math.floor((a / (2 * Math.PI) + 1) * 24) % 2 === 0;
+    const ring = Math.sin(r * 9) > 0.2;
+    const hue = ((a * 180 / Math.PI) + r * 120 + 360) % 360;
+    const lv = (ray ? 1 : 0.45) * (ring ? 1 : 0.7) * Math.max(0.25, 1 - r / 2.6);
+    const col = POV.hsv(hue, 0.95, lv);
+    if (r < 0.2) { const t = (r - 0.14) / 0.06; return col.map((c) => Math.round(255 * (1 - t) + c * t)); }
+    return col;
+  } },
   chevrons: { label: "Rainbow chevrons", aspect: 0.5, px(u, v) {
     const k = (v + Math.abs(u - 0.5) * 0.9) * 6;
     if ((Math.floor(k) & 1)) return [0, 0, 0];
