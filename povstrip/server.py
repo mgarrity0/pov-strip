@@ -81,6 +81,19 @@ class Bridge:
             raise DeviceError("not connected")
         return self.dev
 
+    def run(self, fn):
+        """Runs fn(device) under the lock; a serial failure (board unplugged, USB port
+        tripped) drops the connection so the page can offer Connect again."""
+        with self.lock:
+            dev = self.require()
+            try:
+                return fn(dev)
+            except DeviceError:
+                raise
+            except Exception as e:
+                self.disconnect_locked()
+                raise DeviceError(f"lost the strip ({type(e).__name__}: {e}); plug it in again and Connect")
+
     # ---- firmware flashing (arduino-cli) in a background thread ----
     def start_flash(self, port: str, board: str, config: Optional[dict] = None) -> None:
         if self.fake:
@@ -162,11 +175,9 @@ def make_handler(bridge: Bridge, quit_event: threading.Event):
                 if self.path == "/api/status":
                     return self._json({"ok": True, "connected": bridge.dev is not None, "port": bridge.port})
                 if self.path == "/api/ls":
-                    with bridge.lock:
-                        return self._json({"ok": True, "lines": bridge.require().ls()})
+                    return self._json({"ok": True, "lines": bridge.run(lambda d: d.ls())})
                 if self.path == "/api/info":
-                    with bridge.lock:
-                        return self._json({"ok": True, "lines": bridge.require().info()})
+                    return self._json({"ok": True, "lines": bridge.run(lambda d: d.info())})
                 if self.path == "/api/log":
                     return self._json({"ok": True, "lines": bridge.log[-60:]})
                 if self.path == "/api/flash/status":
@@ -198,12 +209,10 @@ def make_handler(bridge: Bridge, quit_event: threading.Event):
                                        cfg if isinstance(cfg, dict) else None)
                     return self._json({"ok": True})
                 if self.path == "/api/cmd":
-                    with bridge.lock:
-                        lines, ok, err = bridge.require().cmd(str(body.get("text", "")))
+                    lines, ok, err = bridge.run(lambda d: d.cmd(str(body.get("text", ""))))
                     return self._json({"ok": ok, "lines": lines, "error": err})
                 if self.path == "/api/wipe":
-                    with bridge.lock:
-                        bridge.require().wipe()
+                    bridge.run(lambda d: d.wipe())
                     return self._json({"ok": True})
                 if self.path == "/api/put":
                     h = body["header"]
@@ -211,8 +220,7 @@ def make_handler(bridge: Bridge, quit_event: threading.Event):
                                     int(h.get("hold_s", 8)), float(h.get("length_m", 0)), str(h.get("name", "")),
                                     int(round(float(h.get("sweep_dps", 0)))))
                     data = pov_file(hdr, base64.b64decode(body["rgb_b64"]))
-                    with bridge.lock:
-                        bridge.require().put(int(body["slot"]), data)
+                    bridge.run(lambda d: d.put(int(body["slot"]), data))
                     return self._json({"ok": True, "bytes": len(data)})
             except DeviceError as e:
                 return self._json({"ok": False, "error": str(e)})

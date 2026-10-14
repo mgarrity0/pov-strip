@@ -1563,7 +1563,11 @@ async function devInit() {
   async function sendSettings() {
     for (const c of stripCommands()) {
       try { await api("/api/cmd", { text: c }); }
-      catch (e) { if (!/mhz/.test(c)) throw e; }   // mhz is refused by single-wire strips
+      catch (e) {
+        if (/^mhz/.test(c)) continue;                       // refused by single-wire strips
+        if (/unknown command/.test(e.message)) { devLog(`"${c.split(" ")[0]}" needs newer firmware: Flash firmware`); continue; }
+        throw e;
+      }
     }
   }
   $("devApply").addEventListener("click", () => devRun("applying settings", async () => {
