@@ -793,6 +793,82 @@ POV.zip = (files, when = new Date()) => {
 };
 
 // ---- procedural test patterns (rgb column-major, rows x cols) ----------------------------
+// ---- cartoon T. rex, three dance poses -------------------------------------------------
+// Body space: height 2 (Y down), width 2 * aspect. Parts are tested front to back and the
+// first hit wins. p: lean (rad, nose up < 0), bob (up < 0), legNear/legFar ("up" | "down"),
+// armNear/armFar (rad, 0 = forward, negative = raised), jaw (0 closed .. 0.6 open), tail (-1..1).
+const DINO_ASPECT = 1.25;
+const dinoPx = (u, v, p) => {
+  const X0 = (u - 0.5) * 2 * DINO_ASPECT, Y0 = (v - 0.5) * 2 - p.bob;
+  const hx = -0.05, hy = 0.35, cl = Math.cos(p.lean), sl = Math.sin(p.lean);
+  const x = hx + (X0 - hx) * cl - (Y0 - hy) * sl, y = hy + (X0 - hx) * sl + (Y0 - hy) * cl;
+  const inEll = (cx, cy, rx, ry, ang) => {
+    const ca = Math.cos(ang), sa = Math.sin(ang), dx = x - cx, dy = y - cy;
+    const ex = dx * ca + dy * sa, ey = -dx * sa + dy * ca;
+    return ex * ex / (rx * rx) + ey * ey / (ry * ry) < 1;
+  };
+  const inCap = (x1, y1, x2, y2, r1, r2 = r1) => {
+    const dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy;
+    let t = L2 ? ((x - x1) * dx + (y - y1) * dy) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(x - (x1 + t * dx), y - (y1 + t * dy)) < r1 + (r2 - r1) * t;
+  };
+  const GREEN = [70, 190, 90], DARK = [40, 135, 65], LIGHT = [110, 215, 120], BELLY = [180, 235, 140], WHITE = [255, 255, 255];
+  const leg = (hx0, hy0, up, shade) => {
+    const kx = up ? hx0 + 0.3 : hx0 + 0.05, ky = up ? hy0 + 0.12 : hy0 + 0.3;
+    const ax = up ? kx + 0.05 : kx - 0.02, ay = up ? ky + 0.22 : ky + 0.3;
+    const fx = up ? ax + 0.25 : ax + 0.3, fy = up ? ay - 0.08 : ay + 0.02;
+    if (inCap(hx0, hy0, kx, ky, 0.17, 0.12) || inCap(kx, ky, ax, ay, 0.11, 0.085) || inCap(ax, ay, fx, fy, 0.08, 0.06)) return shade;
+    return null;
+  };
+  const arm = (sx, sy, a, shade) => {
+    const ex = sx + 0.18 * Math.cos(a), ey = sy + 0.18 * Math.sin(a);
+    if (inCap(sx, sy, ex, ey, 0.055, 0.045)) return shade;
+    for (const da of [-0.5, 0, 0.5]) {       // three claws
+      const b = a + da * 0.8;
+      if (inCap(ex, ey, ex + 0.09 * Math.cos(b), ey + 0.09 * Math.sin(b), 0.03, 0.012)) return shade;
+    }
+    return null;
+  };
+  // eye
+  if (Math.hypot(x - 0.705, y + 0.69) < 0.016) return WHITE;
+  if (Math.hypot(x - 0.69, y + 0.675) < 0.04) return [0, 0, 0];
+  if (Math.hypot(x - 0.665, y + 0.68) < 0.078) return WHITE;
+  if (inCap(0.58, -0.79, 0.73, -0.81, 0.03)) return DARK;       // brow
+  // mouth: teeth hang from the upper jaw, the lower jaw swings about its hinge
+  const ym = -0.5, open = p.jaw;
+  if (x > 0.56 && x < 1.04 && y > ym - 0.004) {
+    const ph = ((x - 0.56) / 0.08) % 1, h = 0.07 * (1 - Math.abs(ph * 2 - 1));
+    const jawY = ym + (x - 0.5) * open;
+    if (y < ym + h) return WHITE;
+    if (y < jawY) return [120, 30, 60];
+  }
+  if (inEll(0.75, -0.62, 0.37, 0.22, 0.12)) return GREEN;        // head
+  if (inCap(0.52, -0.45, 1.03, -0.45 + 0.53 * open, 0.095, 0.05)) return GREEN;   // jaw
+  // near arm
+  { const c = arm(0.4, -0.1, p.armNear, LIGHT); if (c) return c; }
+  if (inCap(0.3, -0.25, 0.58, -0.55, 0.19, 0.16)) return GREEN;   // neck
+  // spikes along the back
+  for (let i = 0; i < 5; i++) {
+    const sx = 0.22 - 0.19 * i, sy = -0.4 + 0.05 * i;
+    if (y > sy - 0.13 && y < sy + 0.04 && Math.abs(x - sx) < 0.055 * (1 - (sy - y) / 0.13)) return DARK;
+  }
+  if (inEll(0.12, 0.12, 0.42, 0.26, -0.1)) return BELLY;          // belly
+  { const c = leg(-0.05, 0.3, p.legNear === "up", GREEN); if (c) return c; }   // near leg
+  if (inEll(0, 0.05, 0.62, 0.42, -0.2)) return GREEN;              // body
+  { const c = arm(0.3, -0.08, p.armFar, DARK); if (c) return c; }  // far arm
+  { const c = leg(-0.2, 0.32, p.legFar === "up", DARK); if (c) return c; }      // far leg
+  // tail, two tapered segments, the tip swings with p.tail
+  const mx = -0.95, my = 0.02 + 0.12 * p.tail, tx = -1.2, ty = -0.2 + 0.4 * p.tail;
+  if (inCap(-0.5, 0.12, mx, my, 0.19, 0.1) || inCap(mx, my, tx, ty, 0.1, 0.02)) return GREEN;
+  return [0, 0, 0];
+};
+const DINO_POSES = {
+  dino1: { label: "Dino: step",    lean: -0.12, bob: 0,     legNear: "up",   legFar: "down", armNear: -0.2, armFar: 0.3,  jaw: 0.15, tail: 1 },
+  dino2: { label: "Dino: jump",    lean: 0,     bob: -0.08, legNear: "up",   legFar: "up",   armNear: -1.2, armFar: -1.1, jaw: 0.5,  tail: -0.5 },
+  dino3: { label: "Dino: shuffle", lean: 0.1,   bob: 0.02,  legNear: "down", legFar: "up",   armNear: -1,   armFar: 0.2,  jaw: 0,    tail: -1 },
+};
+
 // Drawn in square "design" space: u in [0,1) across, v in [0,1) down, aspect = cols/rows.
 POV.patterns = {
   ring: { label: "Ring", aspect: 1, px(u, v) {
@@ -828,6 +904,9 @@ POV.patterns = {
     const e = Math.abs(Y) / lid, s = 225 - 60 * e * e;   // sclera, greyer toward the lids
     return [Math.round(s), Math.round(s), Math.round(s * 0.96)];
   } },
+  dino1: { label: DINO_POSES.dino1.label, aspect: DINO_ASPECT, px(u, v) { return dinoPx(u, v, DINO_POSES.dino1); } },
+  dino2: { label: DINO_POSES.dino2.label, aspect: DINO_ASPECT, px(u, v) { return dinoPx(u, v, DINO_POSES.dino2); } },
+  dino3: { label: DINO_POSES.dino3.label, aspect: DINO_ASPECT, px(u, v) { return dinoPx(u, v, DINO_POSES.dino3); } },
   chevrons: { label: "Rainbow chevrons", aspect: 0.5, px(u, v) {
     const k = (v + Math.abs(u - 0.5) * 0.9) * 6;
     if ((Math.floor(k) & 1)) return [0, 0, 0];
