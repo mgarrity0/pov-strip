@@ -400,6 +400,7 @@ tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transf
       <div class="actions">
         <select id="devBoard" aria-label="Board to flash" style="width:auto">
           <option value="esp32dev">ESP32 Dev Module</option>
+          <option value="sparklemotion">Adafruit Sparkle Motion</option>
           <option value="xiao_esp32s3">XIAO ESP32S3</option>
           <option value="esp32s3_devkitc">ESP32-S3 DevKitC</option>
         </select>
@@ -458,8 +459,9 @@ tr.grp th { font: 700 11px/1.2 var(--f-body); letter-spacing: 0.1em; text-transf
         <div class="row">
           <label class="lab" for="board">Board</label>
           <select id="board">
-            <option value="xiao">XIAO ESP32S3</option>
             <option value="devkit">ESP32 DevKit</option>
+            <option value="sparkle">Adafruit Sparkle Motion</option>
+            <option value="xiao">XIAO ESP32S3</option>
             <option value="s3devkit">ESP32-S3 DevKitC</option>
             <option value="custom">Custom</option>
           </select>
@@ -523,13 +525,15 @@ const DEF = {
   ],
   sel: 0,
 };
-const BOARDS = { xiao: [9, 7], devkit: [4, 18], s3devkit: [11, 12] };
+// data, clock GPIO. Sparkle Motion: screw terminals 1 and 2 (level-shifted; 3 = GPIO19, pads = GPIO23).
+const BOARDS = { xiao: [9, 7], devkit: [4, 18], s3devkit: [11, 12], sparkle: [21, 22] };
 // App partition size and measured firmware size without images
 // (arduino-esp32 3.3.12, esptool elf2image): [clocked SPI path, single-wire RMT path].
 // `small` is the Arduino IDE default partition, for boards where the project uses Huge APP.
 const BOARD_FLASH = {
   xiao:     { app: 3342336, part: "XIAO default 8 MB layout", fw: [375568, 365920] },
   devkit:   { app: 3145728, part: "Huge APP partition", fw: [370848, 359408], small: 1310720 },
+  sparkle:  { app: 1048576, part: "No OTA, 1 MB app / 3 MB SPIFFS", fw: [374928, 363536], small: 1310720 },
   s3devkit: { app: 3145728, part: "Huge APP partition", fw: [375568, 365920], small: 1310720 },
   custom:   { app: 1310720, part: "default 4 MB layout", fw: [375568, 365920] },
 };
@@ -1242,6 +1246,7 @@ $("board").addEventListener("change", () => {
   st.board = $("board").value;
   const p = BOARDS[st.board];
   if (p) { st.pinData = p[0]; st.pinClock = p[1]; $("pinData").value = p[0]; $("pinClock").value = p[1]; }
+  if ($("devBoard")) $("devBoard").value = ({ xiao: "xiao_esp32s3", s3devkit: "esp32s3_devkitc", sparkle: "sparklemotion" })[st.board] || "esp32dev";
   changed(false);
 });
 for (const name of ["profile", "dir", "mode"]) {
@@ -1514,7 +1519,7 @@ async function devInit() {
     }
   } catch (e) { /* ignore */ }
   $("devRefresh").addEventListener("click", () => devPorts().catch((e) => devLog("ports: " + e.message)));
-  $("devBoard").value = st.board === "xiao" ? "xiao_esp32s3" : st.board === "s3devkit" ? "esp32s3_devkitc" : "esp32dev";
+  $("devBoard").value = ({ xiao: "xiao_esp32s3", s3devkit: "esp32s3_devkitc", sparkle: "sparklemotion" })[st.board] || "esp32dev";
   let flashTimer = 0;
   async function pollFlash() {
     try {

@@ -162,7 +162,7 @@ def main(argv=None):
     s.add_argument("--no-browser", action="store_true")
     s.set_defaults(fn=cmd_serve)
     f = sub.add_parser("flash", help="build and upload the firmware with arduino-cli")
-    f.add_argument("--board", default="esp32dev", choices=["esp32dev", "xiao_esp32s3", "esp32s3_devkitc"])
+    f.add_argument("--board", default="esp32dev", choices=["esp32dev", "sparklemotion", "xiao_esp32s3", "esp32s3_devkitc"])
     f.add_argument("--build-only", action="store_true")
     f.add_argument("--default-partition", action="store_true", help="keep the 1.25 MB app partition (Huge APP otherwise)")
     f.add_argument("--chip", help="LED chip, e.g. WS2812B or APA102 (writes pov_strip/config_local.h)")

@@ -66,6 +66,14 @@ povstrip monitor                                  # raw serial console
 
 Chips: APA102, SK9822, HD107S (data + clock); WS2812B, WS2812B-V5, SK6812 (RGB), WS2811 (800 kHz), WS2813, WS2815 (single wire).
 
+## Adafruit Sparkle Motion
+
+The board made for this: classic ESP32, four level-shifted outputs on screw terminals, 5 A resettable fuses on both power inputs, and the strip's power comes off the board's own + terminals, so strip current never runs through the USB cable and the grounds are one copper pour. Pins (Adafruit's guide, linked below): terminal 1 = GPIO21, terminal 2 = GPIO22, terminal 3 = GPIO19, the pads beside them = GPIO23; onboard NeoPixel GPIO2, red LED GPIO4, button GPIO0.
+
+- Studio: Board = Adafruit Sparkle Motion fills data 21, clock 22 (terminals 1 and 2) and sets the flash target; Flash firmware, then Send. Command line: `povstrip flash --board sparklemotion --serial COMx`. Partition: 1 MB app, 3 MB for images.
+- Power: the slide switch picks 5 V for 5 V strips. The two inputs are diode-ORed per the guide ("good for up to 5A from either USB or the DC jack"); it does not say what happens with both connected. While the PC is on the USB-C port, feed the strip from a 5.1 to 5.2 V supply on the barrel jack so the higher source carries the load, or keep the `amps` limit at 0.5 A. Mac users: a direct USB-C port makes the board expect PD and the serial port does not work (guide); use a hub or a USB-A cable.
+- 5 A fuse: a full-white column on 144 LEDs at 20 mA per channel is 8.6 A, so the `amps` limit matters here too; 4 A leaves margin.
+
 ## Wiring
 
 - Defaults: data GPIO4 (D4 on an ESP32 DevKit), clock GPIO18 (D18, clocked chips only). XIAO ESP32S3: data 9 (D10), clock 7 (D8); its D4 label is GPIO5.
@@ -149,7 +157,7 @@ Why not FastLED: its ESP32 RMT driver (3.10 and later) fixes the strip length at
 
 ## PlatformIO
 
-`pio run -t upload`, then `pio device monitor` (115200). Default env `esp32dev` uses the Huge APP partition. Envs for `xiao_esp32s3` and `esp32s3_devkitc` too.
+`pio run -t upload`, then `pio device monitor` (115200). Default env `esp32dev` uses the Huge APP partition. Envs for `xiao_esp32s3` and `esp32s3_devkitc` too. The Sparkle Motion goes through arduino-cli or the Arduino IDE ("Adafruit Sparkle Motion (ESP32)", partition "No OTA (1MB APP/3MB SPIFFS)").
 
 ## Sources
 
@@ -160,3 +168,4 @@ Why not FastLED: its ESP32 RMT driver (3.10 and later) fixes the strip length at
 - HD107S datasheet: https://www.superlightingled.com/PDF/HD107S-Datasheet.pdf
 - Roberts & Wilkins 2013, flicker during saccades above 1 kHz: https://repository.essex.ac.uk/3842/
 - ESP-IDF SPI master (GPIO matrix limits, DMA): https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/spi_master.html
+- Adafruit Sparkle Motion guide (pinouts, power): https://learn.adafruit.com/adafruit-sparkle-motion/pinouts

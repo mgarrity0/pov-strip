@@ -34,7 +34,8 @@
 
 // ---- Pins: GPIO numbers, not board labels --------------------------------------
 // ESP32 DevKit: label D4 = GPIO4. XIAO ESP32S3 labels differ (D4 = GPIO5); its
-// usual pair is data 9 (D10), clock 7 (D8).
+// usual pair is data 9 (D10), clock 7 (D8). Adafruit Sparkle Motion: screw terminal
+// 1 = GPIO21 (data), 2 = GPIO22 (clock), 3 = GPIO19, pads = GPIO23, all level-shifted.
 #ifndef POV_PIN_DATA
 #define POV_PIN_DATA          4      // D4
 #endif

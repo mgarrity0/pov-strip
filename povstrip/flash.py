@@ -16,6 +16,7 @@ SKETCH = Path(__file__).resolve().parent.parent / "pov_strip"
 
 BOARDS = {
     "esp32dev": ("esp32:esp32:esp32", "PartitionScheme=huge_app"),
+    "sparklemotion": ("esp32:esp32:sparklemotion", "PartitionScheme=noota_3g"),   # 1 MB app, 3 MB for images
     "xiao_esp32s3": ("esp32:esp32:XIAO_ESP32S3", ""),
     "esp32s3_devkitc": ("esp32:esp32:esp32s3", "PartitionScheme=huge_app"),
 }
