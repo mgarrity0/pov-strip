@@ -72,6 +72,7 @@ static uint32_t g_imgSince = 0;
 static int64_t g_deadline = 0;
 static int g_buf = 0;
 static uint32_t g_late = 0, g_passes = 0;
+static uint32_t g_lateMaxUs = 0, g_lateLastMs = 0;   // worst lateness, and when the last one happened
 static int64_t g_lastYield = 0;
 static bool g_test = false;
 static uint8_t *g_testCol = nullptr;
@@ -409,7 +410,14 @@ static void pass(const PovImage &im, int start, int step, int count, bool blankE
   ledout::build(b, colPtr(im, start), g_rowMap);
   for (int k = 0; k < count; ++k) {
     spinUntil(g_deadline);
-    if (esp_timer_get_time() - g_deadline > (int64_t)(g_colUs / 4)) g_late++;
+    {
+      const int64_t lateUs = esp_timer_get_time() - g_deadline;
+      if (lateUs > (int64_t)(g_colUs / 4)) {
+        g_late++;
+        if ((uint32_t)lateUs > g_lateMaxUs) g_lateMaxUs = (uint32_t)lateUs;
+        g_lateLastMs = millis();
+      }
+    }
     ledout::send(b);
     if (k + 1 < count) ledout::build(b ^ 1, colPtr(im, start + step * (k + 1)), g_rowMap);
     else if (blankEnd) ledout::build(b ^ 1, nullptr, g_rowMap);
@@ -543,6 +551,7 @@ static void printInfo() {
   Serial.printf("RAM free %u kB, largest block %u kB\n", (unsigned)(ESP.getFreeHeap() >> 10),
                 (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >> 10));
   Serial.printf("passes %lu, late columns %lu", (unsigned long)g_passes, (unsigned long)g_late);
+  if (g_late) Serial.printf(" (worst %lu us, last at %lu s after boot)", (unsigned long)g_lateMaxUs, (unsigned long)(g_lateLastMs / 1000));
   if (ledout::errors()) Serial.printf(", LED output errors %lu", (unsigned long)ledout::errors());
   Serial.println();
 }
